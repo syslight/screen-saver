@@ -77,5 +77,5 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
   - KWS 模型缺失且后台下载失败 → 手动模式（空格键 / 手机按钮触发）；
   - ASR 未配置 → 语音回复提示去设置填写 API 地址和密钥，文字指令链路仍可用；
   - edge-tts 网络失败 → 自动回退系统 TTS。
-- NFR-7 **质量基线**：`flutter analyze` 无问题、`flutter test` 全绿（当前 54 个纯 Dart 单测）才算改动完成。
+- NFR-7 **质量基线**：`flutter analyze` 无问题、`flutter test` 全绿（当前 57 个纯 Dart 单测）才算改动完成。
 - NFR-8 **NAS 相册逐层降级**：未启用 / 未配置（`nasRemoteDir` 为空）→ 完全不访问 NAS；连接失败 / 凭据错误 → 静默降级为"本地 + 已缓存 NAS 图"，不弹窗，状态落 `连接失败`，下轮刷新（300 秒）自动重试；单张下载失败 → 跳过该张（视同不存在），不影响轮播。

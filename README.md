@@ -111,4 +111,4 @@ web_console/index.html        手机控制台单页（原生 JS，打包进 asse
 
 ## 文档
 
-完整文档见 [docs/](docs/README.md)（需求、架构、协议、语音、开发、部署、路线图）。
+完整文档见 [docs/](docs/README.md)（需求、架构、协议、语音、开发、多 Agent/worktree 协作、commit 规范、部署、路线图）。

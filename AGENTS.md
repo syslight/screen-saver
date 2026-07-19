@@ -2,6 +2,8 @@
 
 本文件是所有 AI coding agent 的项目入口，每个会话先读这里。功能介绍、快捷键、使用方法见 [README.md](README.md)，本文只讲"干活需要知道的事"。深层文档索引见 [docs/README.md](docs/README.md)（需求 / 架构 / 协议 / 语音 / 开发 / 部署 / 路线图）。
 
+无论使用 Codex、Claude Code、Kimi Code CLI 或其他 Agent，均以本文件为项目规则的唯一权威入口；客户端专用入口只能引用本文件，不得复制维护另一套规则。涉及并行任务时，还必须先读 [docs/agent-workflow.md](docs/agent-workflow.md)。
+
 ## 项目简介
 
 Flutter 桌面全屏智能屏（电子相框），目标平台 Windows / macOS / Linux，功能：天气、日历、相册轮播、语音交互（唤醒词→ASR→意图→TTS）、多手机同时控制。包名 `smart_frame`，Flutter 3.44+（stable）。
@@ -72,6 +74,16 @@ NAS 图源引入新依赖 `webdav_client`（`pubspec.yaml`），设置页（S �
   - 配置项（以 `lib/config/app_config.dart` 为准）→ README.md「配置」+ 本文件「配置」表格
 - **规格与计划**：规格文档落 `docs/superpowers/specs/`，计划落 `docs/superpowers/plans/`。
 - 本项目是 git 仓库，托管在 GitHub 私有仓库 `screen-saver`；`git commit` / `push` 等变更操作必须先经用户确认，不要自动执行。
+- **提交规范**：获得用户确认后，commit 必须遵守 [docs/commit-convention.md](docs/commit-convention.md)：标题说明提交目的，正文必须写清“要做什么 / 做了什么 / 负面影响 / Review 重点 / 验证”。不得用 `update`、`fix bug` 等无法审计的模糊描述。
+
+## 多 Agent / worktree 协作
+
+- 一个可写任务对应一个独立分支和一个独立 worktree；禁止多个可写 Agent 共用同一工作目录。只读调研可共享目录，但不得落盘。
+- 主协调者负责拆分任务、声明文件边界、避免依赖倒置，并且是唯一负责最终归并和全量验收的角色。
+- 子任务开始前记录基线提交；结束时必须交付：状态、改动文件、验证命令与结果、未解决风险、建议归并顺序。禁止只回复“完成”。
+- 未经用户确认，任何 Agent 都不得 `git commit`、`git push`、合并分支、删除分支或移除 worktree；不得用 `git reset --hard`、`git clean -fd` 等破坏性命令处理冲突。
+- 并行任务尽量按互不重叠的文件/模块拆分；若必须修改共享文件，由主协调者指定唯一 owner，其他 Agent 只提交建议或补丁说明。
+- 完整 SOP、命名规范、命令、任务简报与交接模板见 [docs/agent-workflow.md](docs/agent-workflow.md)；辅助命令见 `tool/agent_worktree.sh`。
 
 ## 配置
 
