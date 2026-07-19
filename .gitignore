@@ -46,3 +46,9 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Python 守护进程（daemon/）：uv 虚拟环境 + 字节码 + 本地 SQLite/模型缓存
+daemon/.venv/
+**/__pycache__/
+*.db
+

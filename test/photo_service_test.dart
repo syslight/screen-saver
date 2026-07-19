@@ -90,6 +90,57 @@ void main() {
     fail('NAS 刷新未按预期完成：期望「$status」，实际「${service.nasStatus}」');
   }
 
+  test('setHidden 跳过：photos 列表不变，playable/current 跳过', () async {
+    await writeLocal('a.jpg');
+    await writeLocal('b.png');
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.rescan();
+    expect(service.photos.length, 2);
+    final firstId = service.photos.first.id;
+    expect(service.current!.id, firstId);
+    service.setHidden([firstId]);
+    expect(service.photos.length, 2); // 列表不变
+    expect(service.playable.length, 1); // playable 少 1
+    expect(service.hiddenCount, 1);
+    expect(service.current!.id, isNot(firstId)); // 当前跳到 b
+    service.clearHidden();
+    expect(service.playable.length, 2);
+    expect(service.hiddenCount, 0);
+  });
+
+  test('setHidden 全部隐藏：current=null、文案提示、next/prev 不崩', () async {
+    await writeLocal('a.jpg');
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.rescan();
+    service.setHidden(service.photos.map((p) => p.id).toList());
+    expect(service.playable, isEmpty);
+    expect(service.current, isNull);
+    expect(service.currentName, '（全部已过滤）');
+    service.next(); // 不抛异常
+    service.prev();
+  });
+
+  test('next/prev 跳过 hidden 并环绕', () async {
+    await writeLocal('a.jpg');
+    await writeLocal('b.png');
+    await writeLocal('c.jpg');
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.rescan();
+    // 隐藏中间的 b.png
+    final bId = service.photos.firstWhere((p) => p.name == 'b.png').id;
+    service.setHidden([bId]);
+    expect(service.playable.map((p) => p.name), ['a.jpg', 'c.jpg']);
+    service.next(); // a → c（跳过 b）
+    expect(service.current!.name, 'c.jpg');
+    service.next(); // c → a（环绕，跳过 b）
+    expect(service.current!.name, 'a.jpg');
+    service.prev(); // a → c（反向环绕，跳过 b）
+    expect(service.current!.name, 'c.jpg');
+  });
+
   test('混合列表：本地在前按 name 排序，NAS 在后按 name 排序', () async {
     await writeLocal('b.jpg');
     await writeLocal('a.jpg');

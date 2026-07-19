@@ -10,6 +10,9 @@
 |---|---|---|
 | `GET /` | 返回控制台单页 | `content-type: text/html; charset=utf-8`，内容为 Flutter asset `web_console/index.html` |
 | `GET /ws` | WebSocket 升级 | 指令与状态通道，消息格式见第 2、3 章 |
+| `GET /api/config` | 读 NAS 配置 | `application/json`，见第 5 章 |
+| `POST /api/config` | 保存 NAS 配置并即时生效 | `application/json`，见第 5 章 |
+| `POST /api/config/test` | 测试 NAS 连接 | `application/json`，见第 5 章 |
 | `POST /api/photos` | 照片上传 | `multipart/form-data`，见第 4 章 |
 
 要点：
@@ -119,13 +122,96 @@ WS 文本帧，JSON 对象：
 
 注意：`saved` 只统计通过全部校验并成功写盘的文件数，被过滤的字段不计入。官方控制台页逐文件单独 POST（每请求一个 `file` 字段），服务端本身也支持一个请求携带多个文件字段。
 
-## 5. 示例
+## 5. NAS 配置：/api/config
+
+web 控制台（`web_console/index.html` 的「NAS 相册设置」卡片）通过三个 REST 端点配置 NAS 相册，与桌面设置页（S 键）等价、写同一份 `config.json`。配置范围仅 NAS 7 字段；密码掩码——读取不返回、保存时空串表示不改。三端点响应均为 `content-type: application/json`。
+
+### GET /api/config
+
+返回当前 NAS 配置（**不含密码**）：
+
+```json
+{
+  "nasEnabled": false,
+  "nasWebdavUrl": "http://192.168.1.22:5005",
+  "nasWebdavUser": "",
+  "hasPassword": false,
+  "nasRemoteDir": "",
+  "nasFilterEnabled": true,
+  "nasFilterKeywords": ["截图", "screenshot", "屏幕快照", "收集"],
+  "nasFilterMinBytes": 30720,
+  "dedupEnabled": true,
+  "dedupPHashThreshold": 5,
+  "heicEnabled": true,
+  "vlmEnabled": false,
+  "vlmModel": "minicpm-v",
+  "ollamaUrl": "http://localhost:11434",
+  "indexStatus": "待索引（随播放积累）"
+}
+```
+
+`hasPassword` 表示是否已设置密码（真实密码绝不返回）。
+
+### POST /api/config
+
+请求体是 NAS 字段子集，**只认白名单键**（忽略 `photoDir` 等其他键，防误覆盖）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `nasEnabled` | bool | 启用 NAS 相册 |
+| `nasWebdavUrl` | string | WebDAV 地址（trim） |
+| `nasWebdavUser` | string | 账号（trim） |
+| `nasWebdavPassword` | string | **非空才更新，空串=不改**（掩码语义，不 trim） |
+| `nasRemoteDir` | string | 远程照片目录（trim） |
+| `nasFilterEnabled` | bool | 过滤截图开关 |
+| `nasFilterKeywords` | string[] | 过滤关键词（替换语义） |
+| `nasFilterMinBytes` | int | 小于此字节数的文件排除（缩略图/图标，0=不限） |
+| `dedupEnabled` | bool | 内容级去重开关（关闭时清空隐藏，即时全量可见） |
+| `dedupPHashThreshold` | int | dHash 海明距离阈值（近似重复判定，0-64） |
+| `heicEnabled` | bool | HEIC 支持开关（需系统 heif-convert，不可用降级） |
+| `vlmEnabled` | bool | VLM 打标签 + 非照片判定开关（默认关，重） |
+| `vlmModel` | string | ollama 视觉模型名（如 minicpm-v） |
+| `ollamaUrl` | string | ollama API 地址 |
+
+处理链（`control_server.dart` `_onPutConfig`，复刻桌面设置页 `_save()`）：逐字段写入 `AppConfig` → `configService.save()` 落盘 → `nas.configure(...)` 重建客户端 → `photos.applyNasConfig(c, nas)` 即时生效。`applyNasConfig` 是 fire-and-forget（NAS 不可达时连接超时 8 秒不阻塞保存），真实 `nasStatus` 变化由 `CommandService` 监听 `PhotoService` 后异步广播（见第 3 章 `nas` 字段）。
+
+响应：`200 {"ok": true}`；请求体非合法 JSON → `400 {"ok": false, "message": "..."}`；保存异常 → `500 {"ok": false, "message": "..."}`。
+
+### POST /api/config/test
+
+请求体同上（密码空则用已保存值），用临时 `NasPhotoSource` 探针 ping 一次，**不落盘**。响应恒 `200`，业务失败也走 200，前端按 `ok` 字段判断：
+
+```json
+{"ok": true, "message": "连接成功"}
+{"ok": false, "message": "连接失败：..."}
+```
+
+## 6. 示例
 
 ### curl 上传照片
 
 ```bash
 curl -F "file=@/home/user/Downloads/cat.jpg" http://192.168.1.5:8780/api/photos
 # {"saved":1}
+```
+
+### curl 配置 NAS
+
+```bash
+# 读取（密码不返回，仅 hasPassword）
+curl http://192.168.1.5:8780/api/config
+
+# 保存（nasWebdavPassword 空=不改）
+curl -X POST http://192.168.1.5:8780/api/config \
+  -H 'content-type: application/json' \
+  -d '{"nasEnabled":true,"nasWebdavUrl":"http://192.168.1.22:5005","nasWebdavUser":"admin","nasWebdavPassword":"","nasRemoteDir":"/photo"}'
+# {"ok":true}
+
+# 测试连接（恒 200，按 ok 判断）
+curl -X POST http://192.168.1.5:8780/api/config/test \
+  -H 'content-type: application/json' \
+  -d '{"nasWebdavUrl":"http://192.168.1.22:5005","nasWebdavUser":"admin","nasWebdavPassword":"pw","nasRemoteDir":"/photo"}'
+# {"ok":true,"message":"连接成功"}
 ```
 
 ### WebSocket 消息对

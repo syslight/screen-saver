@@ -111,5 +111,45 @@ void main() {
         isTrue,
       );
     });
+
+    test('@eaDir 段（群晖缩略图目录）排除', () {
+      expect(
+        nasPhotoAllowed('/photo/@eaDir/IMG.jpg',
+            enabled: true, keywords: defaultKeywords),
+        isFalse,
+      );
+      expect(
+        nasPhotoAllowed('/photo/sub/@eaDir/x/IMG.jpg',
+            enabled: true, keywords: defaultKeywords),
+        isFalse,
+      );
+      // 子串非独立段不误伤
+      expect(
+        nasPhotoAllowed('/photo/MyEaDirAlbum/x.jpg',
+            enabled: true, keywords: defaultKeywords),
+        isTrue,
+      );
+    });
+
+    test('小文件（size < minBytes）排除，minBytes=0 不限', () {
+      expect(
+        nasPhotoAllowed('/photo/x.jpg',
+            enabled: true, keywords: defaultKeywords, size: 100, minBytes: 30720),
+        isFalse,
+      );
+      expect(
+        nasPhotoAllowed('/photo/x.jpg',
+            enabled: true,
+            keywords: defaultKeywords,
+            size: 50000,
+            minBytes: 30720),
+        isTrue,
+      );
+      expect(
+        nasPhotoAllowed('/photo/x.jpg',
+            enabled: true, keywords: defaultKeywords, size: 1, minBytes: 0),
+        isTrue,
+      );
+    });
   });
 }

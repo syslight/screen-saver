@@ -32,10 +32,16 @@ class TtsService {
   static const _trustedClientToken = '6A5AA1D4EAFF4E9FB37E23D68491D6F4';
   static const _chromiumVersion = '131.0.2903.112';
 
+  /// 合成语音返回 mp3 字节（不播放）。C/S 模式下由调用方推给 ARM 播。
+  Future<Uint8List> synthesize(String text) async {
+    if (text.trim().isEmpty) return Uint8List(0);
+    return _edgeTts(text).timeout(const Duration(seconds: 20));
+  }
+
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
     try {
-      final bytes = await _edgeTts(text).timeout(const Duration(seconds: 20));
+      final bytes = await synthesize(text);
       await _player.setVolume(_volume);
       await _player.stop();
       await _player.play(BytesSource(bytes));

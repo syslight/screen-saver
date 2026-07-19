@@ -5,14 +5,45 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:path/path.dart' as p;
 import 'package:smart_frame/config/app_config.dart';
 import 'package:smart_frame/server/control_server.dart';
 import 'package:smart_frame/server/protocol.dart';
 import 'package:smart_frame/services/command_service.dart';
+import 'package:smart_frame/services/nas_photo_source.dart';
+import 'package:smart_frame/services/photo_index_service.dart';
 import 'package:smart_frame/services/photo_service.dart';
 import 'package:smart_frame/services/weather_service.dart';
 import 'package:smart_frame/voice/tts_service.dart';
 import 'package:web_socket_channel/io.dart';
+
+/// 假 NAS 图源（NasPhotoSource 子类，可注入 ControlServer.nas）：
+/// 记录 configure 调用、listPhotos 返回固定 refs、ping 恒成功。
+/// 不调 super.configure，避免构造真实 webdav 客户端。
+class _FakeNasPhotoSource extends NasPhotoSource {
+  _FakeNasPhotoSource({this.refs = const []});
+
+  final List<NasPhotoRef> refs;
+  int configureCount = 0;
+  String? lastPassword;
+
+  @override
+  void configure({
+    required String url,
+    required String user,
+    required String password,
+    required String remoteDir,
+  }) {
+    configureCount++;
+    lastPassword = password;
+  }
+
+  @override
+  Future<List<NasPhotoRef>> listPhotos() async => List.of(refs);
+
+  @override
+  Future<void> ping() async {}
+}
 
 /// 端到端：真实起 HTTP/WS 服务器，验证控制台协议、指令执行、照片上传。
 /// TTS 在测试环境无音频插件，speak 内部静默失败，不影响协议验证。
@@ -23,6 +54,9 @@ void main() {
   late TtsService tts;
   late CommandService commands;
   late ControlServer server;
+  late ConfigService configService;
+  late _FakeNasPhotoSource nas;
+  late PhotoIndexService photoIndex;
 
   /// 端口 0 = 系统分配，避免与本机其他服务冲突；setUp 后取实际值
   late int port;
@@ -80,25 +114,40 @@ void main() {
     await File('${photoDir.path}/a.jpg').writeAsBytes([1, 2, 3]);
     await File('${photoDir.path}/b.png').writeAsBytes([4, 5, 6]);
 
+    configService = ConfigService(photoDir.path);
+    await configService.load();
+    configService.config.photoDir = photoDir.path;
+    nas = _FakeNasPhotoSource(refs: [
+      NasPhotoRef(path: '/photo/x.jpg', size: 10),
+      NasPhotoRef(path: '/photo/y.jpg', size: 20),
+    ]);
+
     photos = PhotoService(photoDir.path);
     await photos.init();
     weather = WeatherService(city: '北京', client: mockHttp);
     tts = TtsService();
     commands = CommandService(
-        config: AppConfig(photoDir: photoDir.path),
+        config: configService.config,
         photos: photos,
         weather: weather,
         tts: tts);
+    photoIndex = PhotoIndexService(
+        photos, SqliteIndexBackend(p.join(photoDir.path, 'index_test.db')));
+    await photoIndex.init(configService.config);
     server = ControlServer(
         port: 0,
         commands: commands,
         photos: photos,
-        indexHtml: '<html>console</html>');
+        indexHtml: '<html>console</html>',
+        configService: configService,
+        nas: nas,
+        photoIndex: photoIndex);
     await server.start();
     port = server.boundPort;
   });
 
   tearDown(() async {
+    photoIndex.dispose();
     await server.stop();
     await photoDir.delete(recursive: true);
   });
@@ -181,6 +230,106 @@ void main() {
     final streamed = await request.send();
     final body = jsonDecode(await streamed.stream.bytesToString());
     expect(body['saved'], 0);
+  });
+
+  test('GET /api/config 返回 NAS 配置且不含密码', () async {
+    configService.config
+      ..nasEnabled = true
+      ..nasWebdavUrl = 'http://x:9'
+      ..nasWebdavUser = 'u'
+      ..nasWebdavPassword = 'secret'
+      ..nasRemoteDir = '/photo';
+    final resp =
+        await http.get(Uri.parse('http://localhost:$port/api/config'));
+    expect(resp.statusCode, 200);
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    expect(body['nasEnabled'], true);
+    expect(body['nasWebdavUrl'], 'http://x:9');
+    expect(body['nasWebdavUser'], 'u');
+    expect(body['hasPassword'], true);
+    expect(body['nasRemoteDir'], '/photo');
+    // 关键：密码绝不返回
+    expect(body.containsKey('nasWebdavPassword'), isFalse);
+  });
+
+  test('POST /api/config 保存并即时生效，密码空=不改', () async {
+    configService.config.nasWebdavPassword = 'oldpass';
+    final resp = await http.post(
+      Uri.parse('http://localhost:$port/api/config'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({
+        'nasEnabled': true,
+        'nasWebdavUrl': 'http://192.168.1.22:5005',
+        'nasWebdavUser': 'admin',
+        'nasWebdavPassword': '',
+        'nasRemoteDir': '/photo',
+        'nasFilterEnabled': true,
+        'nasFilterKeywords': ['截图', 'screenshot'],
+      }),
+    );
+    expect(resp.statusCode, 200);
+    expect(jsonDecode(resp.body)['ok'], true);
+    final c = configService.config;
+    expect(c.nasEnabled, true);
+    expect(c.nasWebdavUser, 'admin');
+    expect(c.nasRemoteDir, '/photo');
+    // 密码空 → 保持原值
+    expect(c.nasWebdavPassword, 'oldpass');
+    // configure 被调用，传的是未变的原密码
+    expect(nas.configureCount, greaterThanOrEqualTo(1));
+    expect(nas.lastPassword, 'oldpass');
+    // applyNasConfig 生效：fake refs 2 张 → nasStatus 已连接
+    await Future.delayed(const Duration(milliseconds: 300));
+    expect(photos.nasStatus, contains('已连接 2 张'));
+  });
+
+  test('POST /api/config 密码非空则更新', () async {
+    await http.post(
+      Uri.parse('http://localhost:$port/api/config'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'nasWebdavPassword': 'newpass'}),
+    );
+    expect(configService.config.nasWebdavPassword, 'newpass');
+  });
+
+  test('POST /api/config/test 不可达返回 ok:false', () async {
+    final resp = await http.post(
+      Uri.parse('http://localhost:$port/api/config/test'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({
+        'nasWebdavUrl': 'http://127.0.0.1:1',
+        'nasWebdavUser': 'u',
+        'nasWebdavPassword': 'p',
+        'nasRemoteDir': '/photo',
+      }),
+    );
+    expect(resp.statusCode, 200);
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    expect(body['ok'], false);
+    expect(body['message'], contains('连接失败'));
+  });
+
+  test('保存 NAS 配置后 nas 状态变化广播到 WS', () async {
+    final (ws, stream) = connectWs();
+    await stream.first; // 初始快照：未启用
+    final messages = await collectDuring(stream, () async {
+      await http.post(
+        Uri.parse('http://localhost:$port/api/config'),
+        headers: {'content-type': 'application/json'},
+        body: jsonEncode({
+          'nasEnabled': true,
+          'nasWebdavUrl': 'http://x',
+          'nasRemoteDir': '/photo',
+        }),
+      );
+    });
+    // applyNasConfig → _refreshNas 成功 → nasStatus 变 → CommandService 监听广播
+    expect(
+        messages.any((m) =>
+            m['type'] == 'state' &&
+            ((m['nas'] as String?) ?? '').contains('已连接')),
+        isTrue);
+    await ws.sink.close();
   });
 
   test('非法 WS 消息不炸掉连接', () async {

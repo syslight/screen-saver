@@ -16,7 +16,13 @@ class CommandService extends ChangeNotifier {
     required this.photos,
     required this.weather,
     required this.tts,
-  });
+  }) {
+    // 监听相册变化：仅当 NAS 状态文案变化时才广播给手机端
+    // （定时轮播 nasStatus 不变、不广播，零副作用；顺带修复手机端
+    //  看不到 NAS 连接状态实时更新的隐患——见 web 端 POST /api/config）。
+    _lastNasStatus = photos.nasStatus;
+    photos.addListener(_onPhotosChanged);
+  }
 
   final AppConfig config;
   final PhotoService photos;
@@ -37,9 +43,27 @@ class CommandService extends ChangeNotifier {
 
   bool showQrRequested = false;
 
+  /// 上一次广播时的 NAS 状态文案，用于检测变化。
+  String _lastNasStatus = '';
+
   void dismissQr() {
     showQrRequested = false;
     notifyListeners();
+  }
+
+  /// PhotoService 变化时，仅在 NAS 状态文案变化时触发一次广播。
+  void _onPhotosChanged() {
+    final s = photos.nasStatus;
+    if (s != _lastNasStatus) {
+      _lastNasStatus = s;
+      onStateChanged?.call();
+    }
+  }
+
+  @override
+  void dispose() {
+    photos.removeListener(_onPhotosChanged);
+    super.dispose();
   }
 
   Future<String> executeCommand(ConsoleCommand cmd) async {

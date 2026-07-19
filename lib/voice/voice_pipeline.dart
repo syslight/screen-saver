@@ -8,13 +8,14 @@ import '../config/app_config.dart';
 import 'asr_client.dart';
 import 'audio_utils.dart';
 import 'tts_service.dart';
+import 'voice_provider.dart';
 import 'wake_word.dart';
 
 enum VoiceState { idle, listening, processing, speaking }
 
 /// 语音状态机：常驻监听麦克风 → 唤醒词 → 录音 → 云端 ASR →
 /// 本地意图解析 → 执行 → TTS 播报。唤醒词模型缺失时支持手动触发。
-class VoicePipeline extends ChangeNotifier {
+class VoicePipeline extends VoiceProvider {
   VoicePipeline({
     required this.config,
     required this.tts,
@@ -34,6 +35,7 @@ class VoicePipeline extends ChangeNotifier {
   String lastReply = '';
   bool wakeWordReady = false;
   bool micReady = false;
+  @override
   String? statusMessage;
 
   AudioRecorder? _recorder;
@@ -43,6 +45,11 @@ class VoicePipeline extends ChangeNotifier {
   WakeWordService? _wake;
   final AudioPlayer _beepPlayer = AudioPlayer();
 
+  // C/S 模式（x86 VoiceServer）：音频从 injectAudio，TTS 推 _externalTts（WS→ARM）
+  bool _externalMode = false;
+  StreamController<Uint8List>? _externalTts;
+
+  @override
   String get stateText => switch (state) {
         VoiceState.idle => wakeWordReady ? '待唤醒' : '手动模式',
         VoiceState.listening => '聆听中…',
@@ -50,7 +57,24 @@ class VoicePipeline extends ChangeNotifier {
         VoiceState.speaking => '播报中…',
       };
 
+  /// C/S 模式：x86 VoiceServer 注入 TTS 输出 sink；音频走 [injectAudio]，
+  /// KWS/ASR/TTS/意图仍在 x86 本地跑。
+  void startExternal(StreamController<Uint8List> ttsSink) {
+    _externalMode = true;
+    _externalTts = ttsSink;
+  }
+
+  /// 外部喂音频（WS 收 ARM 的 PCM 16k），等同本地 record 的 [_onAudioChunk]。
+  void injectAudio(Uint8List chunk) => _onAudioChunk(chunk);
+
   Future<void> init() async {
+    if (_externalMode) {
+      // C/S：x86 跑 KWS（音频从 injectAudio），不本地 record
+      _wake = WakeWordService(onWake: triggerListen);
+      wakeWordReady = _wake!.init(config.wakeWordModelDir);
+      notifyListeners();
+      return;
+    }
     try {
       _recorder = AudioRecorder();
       micReady = await _recorder!.hasPermission();
@@ -97,6 +121,7 @@ class VoicePipeline extends ChangeNotifier {
   }
 
   /// 唤醒词命中或手动触发（空格键 / 手机按钮）。
+  @override
   Future<void> triggerListen() async {
     if (state != VoiceState.idle) return;
     _setState(VoiceState.listening);
@@ -133,9 +158,16 @@ class VoicePipeline extends ChangeNotifier {
     lastReply = text;
     _setState(VoiceState.speaking);
     try {
-      await tts.speak(text);
-      // 等播报完再恢复监听，避免录到自己的声音
-      await Future.delayed(const Duration(milliseconds: 800));
+      if (_externalMode && _externalTts != null) {
+        // C/S：合成 mp3 推 WS，ARM 播
+        final mp3 = await tts.synthesize(text);
+        if (mp3.isNotEmpty) _externalTts!.add(mp3);
+        await Future.delayed(const Duration(milliseconds: 800));
+      } else {
+        await tts.speak(text);
+        // 等播报完再恢复监听，避免录到自己的声音
+        await Future.delayed(const Duration(milliseconds: 800));
+      }
     } catch (_) {}
     _wake?.reset();
     _setState(VoiceState.idle);

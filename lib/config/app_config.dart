@@ -26,6 +26,15 @@ class AppConfig {
     this.nasRemoteDir = '',
     this.nasFilterEnabled = true,
     this.nasFilterKeywords = const ['截图', 'screenshot', '屏幕快照', '收集'],
+    this.dedupEnabled = true,
+    this.dedupPHashThreshold = 5,
+    this.nasFilterMinBytes = 30720,
+    this.heicEnabled = true,
+    this.vlmEnabled = false,
+    this.vlmModel = 'minicpm-v',
+    this.ollamaUrl = 'http://localhost:11434',
+    this.serverRole = 'compute',
+    this.computeNodeUrl = '',
   });
 
   /// 天气城市名（Open-Meteo 地理编码）
@@ -81,6 +90,33 @@ class AppConfig {
   /// NAS 过滤关键词（路径或文件名含关键词即排除，大小写不敏感）
   List<String> nasFilterKeywords;
 
+  /// 是否启用内容级去重（sha256 完全重复 + pHash 近似重复）
+  bool dedupEnabled;
+
+  /// pHash 海明距离 ≤ 此值视为近似重复（0-64，越小越严格）
+  int dedupPHashThreshold;
+
+  /// NAS 过滤：文件小于此字节数视为缩略图/图标，排除
+  int nasFilterMinBytes;
+
+  /// 是否支持 HEIC/HEIF（依赖系统 heif-convert，不可用时自动降级跳过）
+  bool heicEnabled;
+
+  /// 是否启用 VLM（ollama 视觉模型）打标签 + 非照片判定（重，默认关）
+  bool vlmEnabled;
+
+  /// ollama 视觉模型名（如 minicpm-v、llama3.2-vision、llava）
+  String vlmModel;
+
+  /// ollama API 地址
+  String ollamaUrl;
+
+  /// 节点角色：compute（计算+存储+模型，x86）/ display（展示，从 computeNodeUrl 拉数据，ARM）
+  String serverRole;
+
+  /// 展示节点指向的计算节点 URL（如 http://192.168.1.9:8780）；仅 display 用
+  String computeNodeUrl;
+
   factory AppConfig.fromJson(Map<String, dynamic> j) => AppConfig(
         city: j['city'] as String? ?? '北京',
         photoDir: j['photoDir'] as String? ?? '',
@@ -102,6 +138,15 @@ class AppConfig {
         nasFilterEnabled: j['nasFilterEnabled'] as bool? ?? true,
         nasFilterKeywords: (j['nasFilterKeywords'] as List?)?.cast<String>() ??
             const ['截图', 'screenshot', '屏幕快照', '收集'],
+        dedupEnabled: j['dedupEnabled'] as bool? ?? true,
+        dedupPHashThreshold: j['dedupPHashThreshold'] as int? ?? 5,
+        nasFilterMinBytes: j['nasFilterMinBytes'] as int? ?? 30720,
+        heicEnabled: j['heicEnabled'] as bool? ?? true,
+        vlmEnabled: j['vlmEnabled'] as bool? ?? false,
+        vlmModel: j['vlmModel'] as String? ?? 'minicpm-v',
+        ollamaUrl: j['ollamaUrl'] as String? ?? 'http://localhost:11434',
+        serverRole: j['serverRole'] as String? ?? 'compute',
+        computeNodeUrl: j['computeNodeUrl'] as String? ?? '',
       );
 
   Map<String, dynamic> toJson() => {
@@ -124,6 +169,15 @@ class AppConfig {
         'nasRemoteDir': nasRemoteDir,
         'nasFilterEnabled': nasFilterEnabled,
         'nasFilterKeywords': nasFilterKeywords,
+        'dedupEnabled': dedupEnabled,
+        'dedupPHashThreshold': dedupPHashThreshold,
+        'nasFilterMinBytes': nasFilterMinBytes,
+        'heicEnabled': heicEnabled,
+        'vlmEnabled': vlmEnabled,
+        'vlmModel': vlmModel,
+        'ollamaUrl': ollamaUrl,
+        'serverRole': serverRole,
+        'computeNodeUrl': computeNodeUrl,
       };
 }
 

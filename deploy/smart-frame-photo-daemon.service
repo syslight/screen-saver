@@ -1,0 +1,16 @@
+[Unit]
+Description=smart_frame Photo Daemon (NAS 全量预处理：dinov2/CLIP/insightface/VLM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/peidong/.local/bin/uv run --directory /home/peidong/source/screen-saver/daemon python -m smart_frame_photo_daemon --watch --embed --faces --tags
+Restart=on-failure
+RestartSec=60
+Environment=SMART_FRAME_CONFIG=%h/.local/share/com.example.smart_frame/config.json
+StandardOutput=append:%h/.local/share/com.example.smart_frame/daemon.log
+StandardError=append:%h/.local/share/com.example.smart_frame/daemon.log
+
+[Install]
+WantedBy=default.target

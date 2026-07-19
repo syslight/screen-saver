@@ -43,7 +43,7 @@ flutter build linux --release # 出包：build/linux/x64/release/bundle/
 ## 手机控制台
 
 1. 按 **Q** 显示二维码，手机扫码（需与电脑同一局域网），或浏览器直接访问 `http://<电脑IP>:8780`
-2. 功能：查看状态、切换照片、调节音量、发文字指令、让屏幕播报、上传照片
+2. 功能：查看状态、切换照片、调节音量、发文字指令、让屏幕播报、上传照片、配置 NAS 相册
 3. 多台手机可同时连接，状态实时同步
 
 ## 语音交互
@@ -85,7 +85,10 @@ flutter build linux --release # 出包：build/linux/x64/release/bundle/
 说明：
 
 - `photoDir` 为空时回落到 `~/Pictures`，把照片放进去即可（支持 jpg/png/webp/bmp/gif），手机上传的照片也存这里
-- NAS 相册（WebDAV）在设置（S）里开启：地址 / 账号 / 远程目录，支持截图规则过滤；NAS 照片与本地照片混合轮播，未配置或连接失败时自动降级为本地相册，不影响其他功能
+- NAS 相册（WebDAV）在设置（S 键）或 web 控制台的「NAS 相册设置」卡片（`http://<电脑IP>:8780`）里配置：地址 / 账号 / 密码 / 远程目录，支持截图规则过滤；NAS 照片与本地照片混合轮播，未配置或连接失败时自动降级为本地相册，不影响其他功能
+- **去重与跳过**：`dedupEnabled` 开启后，对播放过的照片算内容指纹（sha256 完全重复 + dHash 近似重复），重复的张播放时跳过（**不删原文件**，只读）；`nasFilterMinBytes` 过滤小图/缩略图、`@eaDir` 自动排除。索引随播放增量积累（SQLite，存应用数据目录 `photo_index.db`）
+- **HEIC 支持**：iPhone 的 `.heic` 照片需系统 `heif-convert` 解码——Linux 装一次 `sudo apt install libheif-examples`（macOS 自带、Windows 需 libheif）；未安装时 HEIC 自动跳过、其余格式不受影响
+- **智能打标签（VLM，可选）**：开启 `vlmEnabled` 后，调用本地 [ollama](https://ollama.com) 视觉模型（默认 `minicpm-v`，先 `ollama pull minicpm-v`）给照片打场景标签、判定非照片（截图/表情包/文档/图标），非照片播放跳过。标签随播放增量计算（每张几秒，GTX 1070 Ti 级显卡），存 `photo_index.db`
 - `nasWebdavPassword` 为本地明文存储（家庭局域网场景），请勿把真实配置文件提交到公开仓库
 
 ## 测试

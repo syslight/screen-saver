@@ -45,6 +45,10 @@ class PhotoService extends ChangeNotifier {
 
   static const imageExts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'];
 
+  /// HEIC/HEIF 扩展名：桌面 Flutter/Skia 不原生解码，fileFor 需调系统
+  /// heif-convert 转 jpg 后才能显示。
+  static const heicExts = ['.heic', '.heif'];
+
   /// NAS 缓存默认上限：500MB
   static const defaultCacheLimitBytes = 500 * 1024 * 1024;
 
@@ -53,6 +57,22 @@ class PhotoService extends ChangeNotifier {
   /// NAS 缓存目录；为空表示未初始化，此时 NAS 项不可 fileFor
   final String cacheDir;
 
+  /// 是否启用 HEIC 转换（false 或 heif-convert 不可用时 HEIC 跳过）
+  bool heicEnabled = true;
+
+  /// 系统 heif-convert 是否可用（启动时 [detectHeifConvert] 检测）
+  static bool heicConvertAvailable = false;
+
+  /// 检测 heif-convert 是否在 PATH（桌面 Flutter 不原生解 HEIC，需此工具）
+  static Future<void> detectHeifConvert() async {
+    try {
+      final r = await Process.run('which', ['heif-convert']);
+      heicConvertAvailable = r.exitCode == 0;
+    } catch (_) {
+      heicConvertAvailable = false;
+    }
+  }
+
   /// 缓存上限（字节），超出后按 lastModified 最旧先淘汰
   final int cacheLimitBytes;
 
@@ -60,6 +80,9 @@ class PhotoService extends ChangeNotifier {
   List<File> _localFiles = [];
   List<NasPhotoRef> _nasRefs = [];
   int _index = 0;
+
+  /// 被去重/质量规则隐藏的 photo id（播放跳过，不进 playable 视图）
+  final Set<String> _hiddenIds = {};
 
   NasSource? _nas;
   bool _nasEnabled = false;
@@ -73,10 +96,60 @@ class PhotoService extends ChangeNotifier {
   Timer? _nasTimer;
   int _slideshowSeconds = 0;
 
-  PhotoItem? get current =>
-      photos.isEmpty ? null : photos[_index.clamp(0, photos.length - 1)];
+  PhotoItem? get current {
+    final p = playable;
+    if (p.isEmpty) return null;
+    return p[_index.clamp(0, p.length - 1)];
+  }
 
-  String get currentName => current == null ? '（相册为空）' : current!.name;
+  String get currentName {
+    if (playable.isEmpty) {
+      return photos.isEmpty ? '（相册为空）' : '（全部已过滤）';
+    }
+    return current!.name;
+  }
+
+  /// 可播放视图：photos 减去 _hiddenIds。[_index] 是此视图的下标。
+  List<PhotoItem> get playable => _hiddenIds.isEmpty
+      ? photos
+      : photos.where((p) => !_hiddenIds.contains(p.id)).toList();
+
+  /// 被去重/质量规则隐藏的数量
+  int get hiddenCount => _hiddenIds.isEmpty
+      ? 0
+      : photos.where((p) => _hiddenIds.contains(p.id)).length;
+
+  /// 标记隐藏（去重/质量规则用）；保持当前张不变（除非当前被隐藏）
+  void setHidden(Iterable<String> ids) {
+    if (ids.isEmpty) return;
+    final curId = current?.id;
+    _hiddenIds.addAll(ids);
+    _realignIndex(curId);
+    notifyListeners();
+  }
+
+  void clearHidden() {
+    if (_hiddenIds.isEmpty) return;
+    final curId = current?.id;
+    _hiddenIds.clear();
+    _realignIndex(curId);
+    notifyListeners();
+  }
+
+  /// 按 [currentId] 在 playable 中重定位 [_index]（photos/hidden 变化后调用）
+  void _realignIndex(String? currentId) {
+    final p = playable;
+    if (p.isEmpty) {
+      _index = 0;
+      return;
+    }
+    if (currentId != null) {
+      final i = p.indexWhere((item) => item.id == currentId);
+      _index = i >= 0 ? i : 0;
+    } else {
+      _index = 0;
+    }
+  }
 
   /// NAS 状态：未启用 / 未配置 / 已连接 N 张 / 连接失败
   String get nasStatus => _nasStatus;
@@ -140,6 +213,7 @@ class PhotoService extends ChangeNotifier {
     if (nas is NasPhotoSource) {
       nas.filterEnabled = config.nasFilterEnabled;
       nas.filterKeywords = config.nasFilterKeywords;
+      nas.filterMinBytes = config.nasFilterMinBytes;
     }
     _nas = nas;
     _nasEnabled = config.nasEnabled && config.nasRemoteDir.isNotEmpty;
@@ -222,36 +296,55 @@ class PhotoService extends ChangeNotifier {
 
   /// 预取下一张 NAS 图，保证轮播间隔内不卡。
   void prefetchNext() {
-    if (photos.isEmpty) return;
-    final nextItem = photos[(_index + 1) % photos.length];
+    final p = playable;
+    if (p.isEmpty) return;
+    final nextItem = p[(_index + 1) % p.length];
     if (nextItem.isNas) unawaited(fileFor(nextItem));
   }
 
   Future<File?> _download(NasPhotoRef ref) async {
     final path = _cachePathFor(ref.path);
+    final isHeic = heicExts.contains(p.extension(ref.path).toLowerCase());
     try {
       await Directory(cacheDir).create(recursive: true);
-      await _nas!.downloadTo(ref.path, path);
-      final file = File(path);
-      if (!await file.exists()) return null;
+      if (isHeic) {
+        // 桌面不原生解 HEIC：下载到临时再 heif-convert 转 jpg；不可用则跳过
+        if (!heicEnabled || !heicConvertAvailable) return null;
+        final tmp = '$path.heic.tmp';
+        await _nas!.downloadTo(ref.path, tmp);
+        final res = await Process.run('heif-convert', [tmp, path]);
+        try {
+          await File(tmp).delete();
+        } catch (_) {}
+        if (res.exitCode != 0 || !await File(path).exists()) return null;
+      } else {
+        await _nas!.downloadTo(ref.path, path);
+        if (!await File(path).exists()) return null;
+      }
       await _evictCache(keepPath: path);
-      return file;
+      return File(path);
     } catch (e) {
       // 单张下载失败：清理可能残留的部分文件（避免 cachedFileFor 误命中
       // 半截文件导致永久黑块），记日志后跳过该张（视同不存在）
       try {
         await File(path).delete();
       } catch (_) {}
+      try {
+        await File('$path.heic.tmp').delete();
+      } catch (_) {}
       debugPrint('NAS 下载失败: ${ref.path}, $e');
       return null;
     }
   }
 
-  /// 缓存文件名 = sha256(远程路径) 前 16 位 + 原扩展名
+  /// 缓存文件名 = sha256(远程路径) 前 16 位 + 扩展名（HEIC 统一以 .jpg 缓存，
+  /// 下载时由 heif-convert 转换；桌面 Flutter 不原生解 HEIC）。
   String _cachePathFor(String remotePath) {
     final hash =
         sha256.convert(utf8.encode(remotePath)).toString().substring(0, 16);
-    return p.join(cacheDir, '$hash${p.extension(remotePath)}');
+    final ext = p.extension(remotePath).toLowerCase();
+    final cacheExt = heicExts.contains(ext) ? '.jpg' : ext;
+    return p.join(cacheDir, '$hash$cacheExt');
   }
 
   void _touch(File file) {
@@ -298,21 +391,17 @@ class PhotoService extends ChangeNotifier {
       for (final file in _localFiles) PhotoItem.fromLocal(file),
       for (final ref in _nasRefs) PhotoItem.fromNas(ref),
     ];
-    if (currentId != null) {
-      final i = photos.indexWhere((item) => item.id == currentId);
-      _index = i >= 0 ? i : 0;
-    } else {
-      _index = 0;
-    }
+    _realignIndex(currentId);
   }
 
   void next() => _advance(1);
   void prev() => _advance(-1);
 
   void _advance(int delta, {bool user = true}) {
-    if (photos.isEmpty) return;
-    _index = (_index + delta) % photos.length;
-    if (_index < 0) _index += photos.length;
+    final p = playable;
+    if (p.isEmpty) return;
+    _index = (_index + delta) % p.length;
+    if (_index < 0) _index += p.length;
     notifyListeners();
     // 手动切换后重新开始轮播计时，避免刚切完又跳
     if (user && _slideshowSeconds > 0) startSlideshow(_slideshowSeconds);

@@ -52,6 +52,8 @@ dependencies:
   path: ^1.9.1
   crypto: ^3.0.7
   webdav_client: ^1.2.2
+  image: ^4.2.0
+  sqflite_common_ffi: ^2.3.3
 
 dev_dependencies:
   flutter_test:

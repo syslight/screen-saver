@@ -27,6 +27,14 @@
   #log { font-size: 12px; color: var(--dim); max-height: 140px; overflow-y: auto; margin-top: 4px; }
   #log div { padding: 2px 0; border-top: 1px solid #262a31; }
   .upload-label { display: block; text-align: center; background: #2c313a; border-radius: 8px; padding: 14px; font-size: 15px; cursor: pointer; border: 1px dashed #444; }
+  .field { margin-bottom: 10px; }
+  .field > label { display: block; color: var(--dim); font-size: 12px; margin-bottom: 4px; }
+  .field input[type=text], .field input[type=password] { background: #121417; border: 1px solid #333; border-radius: 8px; color: var(--fg); padding: 10px; font-size: 14px; width: 100%; }
+  .switch { display: flex; align-items: center; gap: 8px; color: var(--fg); font-size: 14px; cursor: pointer; }
+  .switch input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .cfg-result { font-size: 13px; margin-top: 8px; min-height: 18px; color: var(--dim); }
+  .cfg-result.ok { color: #4caf50; }
+  .cfg-result.err { color: #f44336; }
 </style>
 </head>
 <body>
@@ -80,6 +88,26 @@
     <label class="upload-label">选择照片上传
       <input type="file" id="fileInput" accept="image/*" multiple>
     </label>
+  </div>
+
+  <div class="card">
+    <h2>NAS 相册设置</h2>
+    <div class="field">
+      <label class="switch"><input type="checkbox" id="cfg-enabled"><span>启用 NAS 相册</span></label>
+    </div>
+    <div class="field"><label>WebDAV 地址</label><input type="text" id="cfg-url" placeholder="http://192.168.1.22:5005"></div>
+    <div class="field"><label>账号</label><input type="text" id="cfg-user"></div>
+    <div class="field"><label>密码</label><input type="password" id="cfg-password" placeholder="留空则不修改"></div>
+    <div class="field"><label>远程照片目录</label><input type="text" id="cfg-dir" placeholder="/photo"></div>
+    <div class="field">
+      <label class="switch"><input type="checkbox" id="cfg-filter"><span>过滤截图等文件</span></label>
+    </div>
+    <div class="field"><label>过滤关键词（逗号分隔）</label><input type="text" id="cfg-keywords" placeholder="截图, screenshot, 屏幕快照"></div>
+    <div class="row">
+      <button class="secondary" id="cfg-test-btn" onclick="testNas()">测试连接</button>
+      <button onclick="saveNas()">保存</button>
+    </div>
+    <div id="cfg-result" class="cfg-result"></div>
   </div>
 
   <div class="card">
@@ -175,7 +203,87 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
   e.target.value = '';
 });
 
+// ===== NAS 相册配置 =====
+async function loadNasConfig() {
+  try {
+    const r = await fetch('/api/config');
+    if (!r.ok) return;
+    const c = await r.json();
+    document.getElementById('cfg-enabled').checked = !!c.nasEnabled;
+    document.getElementById('cfg-url').value = c.nasWebdavUrl || '';
+    document.getElementById('cfg-user').value = c.nasWebdavUser || '';
+    document.getElementById('cfg-dir').value = c.nasRemoteDir || '';
+    document.getElementById('cfg-filter').checked = c.nasFilterEnabled !== false;
+    document.getElementById('cfg-keywords').value = (c.nasFilterKeywords || []).join(', ');
+    const pwdEl = document.getElementById('cfg-password');
+    pwdEl.value = '';
+    pwdEl.placeholder = c.hasPassword ? '已设置，留空则不修改' : '留空则不修改';
+  } catch (e) {
+    setCfgResult('加载配置失败', 'err');
+  }
+}
+
+function nasPayload() {
+  // 密码不 trim：空串=不改，非空才下发
+  return {
+    nasEnabled: document.getElementById('cfg-enabled').checked,
+    nasWebdavUrl: document.getElementById('cfg-url').value.trim(),
+    nasWebdavUser: document.getElementById('cfg-user').value.trim(),
+    nasWebdavPassword: document.getElementById('cfg-password').value,
+    nasRemoteDir: document.getElementById('cfg-dir').value.trim(),
+    nasFilterEnabled: document.getElementById('cfg-filter').checked,
+    nasFilterKeywords: document.getElementById('cfg-keywords').value
+      .split(/[,，]/).map(s => s.trim()).filter(s => s.length),
+  };
+}
+
+function setCfgResult(text, kind) {
+  const el = document.getElementById('cfg-result');
+  el.textContent = text;
+  el.className = 'cfg-result ' + (kind === 'ok' ? 'ok' : kind === 'err' ? 'err' : '');
+}
+
+async function testNas() {
+  const btn = document.getElementById('cfg-test-btn');
+  btn.disabled = true;
+  setCfgResult('测试中…', '');
+  try {
+    const r = await fetch('/api/config/test', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(nasPayload()),
+    });
+    const c = await r.json();
+    setCfgResult(c.message || (c.ok ? '连接成功' : '连接失败'), c.ok ? 'ok' : 'err');
+  } catch (e) {
+    setCfgResult('请求失败: ' + e, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function saveNas() {
+  setCfgResult('保存中…', '');
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(nasPayload()),
+    });
+    const c = await r.json();
+    if (c.ok) {
+      setCfgResult('已保存，正在连接 NAS…（见顶部 NAS 状态行）', 'ok');
+      const pwdEl = document.getElementById('cfg-password');
+      pwdEl.value = '';
+      pwdEl.placeholder = '已设置，留空则不修改';
+    } else {
+      setCfgResult('保存失败: ' + (c.message || ''), 'err');
+    }
+  } catch (e) {
+    setCfgResult('请求失败: ' + e, 'err');
+  }
+}
+
 connect();
+loadNasConfig();
 </script>
 </body>
 </html>

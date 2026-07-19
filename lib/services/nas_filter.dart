@@ -18,12 +18,24 @@ final _screenshotPatterns = [
 ];
 
 /// 判断 [pathOrName]（NAS 路径或文件名）是否放行。
+///
+/// 规则（[enabled] 为 false 时全部放行）：
+/// 1. 路径任一段为 `@eaDir`（群晖缩略图目录）→ 排除（文件级防御；
+///    目录级在列目录时早 skip 不递归）；
+/// 2. [size] < [minBytes]（>0 时）→ 排除（缩略图/图标）；
+/// 3. 路径（转小写后）含任一非空关键词（转小写）→ 排除；
+/// 4. 文件名 basename 命中常见截图命名模式 → 排除（内置正则）；
+/// 5. 其余放行。
 bool nasPhotoAllowed(
   String pathOrName, {
   required bool enabled,
   required List<String> keywords,
+  int size = 0,
+  int minBytes = 0,
 }) {
   if (!enabled) return true;
+  if (pathOrName.split(RegExp(r'[/\\]')).any((s) => s == '@eaDir')) return false;
+  if (minBytes > 0 && size < minBytes) return false;
   final lower = pathOrName.toLowerCase();
   for (final keyword in keywords) {
     if (keyword.isEmpty) continue;

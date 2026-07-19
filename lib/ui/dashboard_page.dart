@@ -5,7 +5,7 @@ import 'package:window_manager/window_manager.dart';
 
 import '../services/command_service.dart';
 import '../services/photo_service.dart';
-import '../voice/voice_pipeline.dart';
+import '../voice/voice_provider.dart';
 import 'widgets/calendar_widget.dart';
 import 'widgets/clock_widget.dart';
 import 'widgets/photo_slideshow.dart';
@@ -43,7 +43,7 @@ class _DashboardPageState extends State<DashboardPage> {
         SettingsSheet.show(context);
         return KeyEventResult.handled;
       case LogicalKeyboardKey.space:
-        context.read<VoicePipeline>().triggerListen();
+        context.read<VoiceProvider>().triggerListen();
         return KeyEventResult.handled;
       case LogicalKeyboardKey.escape:
         windowManager.setFullScreen(false);

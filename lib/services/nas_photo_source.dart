@@ -48,6 +48,9 @@ class NasPhotoSource implements NasSource {
   bool filterEnabled = true;
   List<String> filterKeywords = const ['截图', 'screenshot', '屏幕快照', '收集'];
 
+  /// 小于此字节数的文件视为缩略图/图标排除（0 = 不限）
+  int filterMinBytes = 0;
+
   int _filteredCount = 0;
 
   /// 上一次 listPhotos 中被截图过滤规则排除的数量（规格：被过滤数量计入状态）
@@ -92,16 +95,25 @@ class NasPhotoSource implements NasSource {
     for (final entry in await client.readDir(dir)) {
       final path = entry.path;
       if (path == null) continue;
+      // @eaDir（群晖缩略图目录）整棵跳过，不递归（省 PROPFIND）
+      if (path.split('/').any((s) => s == '@eaDir')) {
+        _filteredCount++;
+        continue;
+      }
       if (entry.isDir == true) {
         await _listInto(client, path, out);
         continue;
       }
-      // 只认图片扩展名，视频等其余文件不进相册
-      if (!PhotoService.imageExts.contains(p.extension(path).toLowerCase())) {
-        continue;
-      }
+      // 只认图片扩展名（含 HEIC，HEIC 由 PhotoService.fileFor 转换）
+      final ext = p.extension(path).toLowerCase();
+      final isImage = PhotoService.imageExts.contains(ext) ||
+          PhotoService.heicExts.contains(ext);
+      if (!isImage) continue;
       if (!nasPhotoAllowed(path,
-          enabled: filterEnabled, keywords: filterKeywords)) {
+          enabled: filterEnabled,
+          keywords: filterKeywords,
+          size: entry.size ?? 0,
+          minBytes: filterMinBytes)) {
         _filteredCount++;
         continue;
       }

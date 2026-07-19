@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../config/app_config.dart';
 import '../../services/nas_photo_source.dart';
+import '../../services/photo_index_service.dart';
 import '../../services/photo_service.dart';
 import '../../services/weather_service.dart';
 import '../../voice/asr_client.dart';
@@ -115,6 +116,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
     final nas = context.read<NasPhotoSource>();
     final tts = context.read<TtsService>();
     final asr = context.read<AsrClient>();
+    final photoIndex = context.read<PhotoIndexService>();
     final navigator = Navigator.of(context);
 
     final c = configService.config;
@@ -149,6 +151,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         password: c.nasWebdavPassword,
         remoteDir: c.nasRemoteDir);
     await photos.applyNasConfig(c, nas);
+    photoIndex.applyConfig(c);
     tts.voice = c.ttsVoice;
     asr
       ..baseUrl = c.asrBaseUrl

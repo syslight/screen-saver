@@ -53,19 +53,21 @@ configure 失败过的缓存会把 `CMAKE_INSTALL_PREFIX` 留在 `/usr/local`，
 lib/
   main.dart                   入口：服务装配 + Provider 注入
   config/app_config.dart      配置模型与持久化（ConfigService）
-  services/                   weather / calendar / photo（聚合 NAS 图源 nas_photo_source、截图过滤 nas_filter）/ command(统一指令总线)
+  services/                   weather / calendar / photo（聚合 NAS 图源 nas_photo_source、过滤 nas_filter、去重索引 photo_index_service）/ command(统一指令总线)
   server/                     shelf HTTP+WS 服务器、消息协议
   voice/                      唤醒词(KWS)、ASR 客户端、意图解析、edge-tts、状态机
   ui/                         全屏仪表盘与各小组件
 web_console/index.html        手机控制台单页（原生 JS，打包进 assets）
-test/                         9 个测试文件，见下方"测试地图"
+daemon/                       照片守护进程（Python 3.12 + uv，离线全量预处理 NAS 照片：dinov2/CLIP/insightface/VLM，写共享 SQLite；见 daemon/README.md）
+deploy/                       systemd user unit（守护进程常驻）
+test/                         10 个 Dart 测试文件，见下方"测试地图"
 ```
 
-NAS 图源引入新依赖 `webdav_client`（`pubspec.yaml`），设置页（S 键）含"NAS 相册"区可配置并测试连接。
+NAS 图源引入新依赖 `webdav_client`（`pubspec.yaml`），桌面设置页（S 键）与 web 控制台（`/api/config`、`/api/config/test`，见 `docs/protocol.md` 第 5 章）均可配置 NAS 并测试连接；二者写同一份 `config.json`。
 
 ## 硬性约定
 
-- **改代码后必须验证**：`flutter analyze` 无问题且 `flutter test` 全绿（当前 57 个用例），才算完成。
+- **改代码后必须验证**：`flutter analyze` 无问题且 `flutter test` 全绿（当前 70 个 Dart 用例），才算完成。Dart（`lib/`+`test/`）与 Python（`daemon/`）是两个语言栈：`flutter analyze/test` 只覆盖前者，`daemon/` 用 `uv run` + 自身的 Python 测试，互不参与。
 - **指令统一入口**：现状——手机 WS 指令与语音意图统一经 `CommandService`（`lib/services/command_service.dart`）总线处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为直连服务的历史实现（`lib/ui/dashboard_page.dart`：←/→ 直连 `PhotoService`、空格直连 `VoicePipeline.triggerListen`，不经总线、不触发广播）。规范——新增指令应接入 `CommandService` 总线，不得绕过它直接操作服务，以便状态广播到全部手机端。
 - **改了就要同步文档**：
   - 目录结构 / 构建命令 → README.md（「运行与构建」「架构速览」）+ 本文件对应章节
@@ -110,19 +112,27 @@ NAS 图源引入新依赖 `webdav_client`（`pubspec.yaml`），设置页（S �
 | `nasRemoteDir` | 空 | NAS 远程照片目录；为空视为未配置（即使启用也不扫描，状态"未配置"） |
 | `nasFilterEnabled` | `true` | NAS 截图规则过滤开关（仅作用于 NAS 来源） |
 | `nasFilterKeywords` | `['截图', 'screenshot', '屏幕快照', '收集']` | NAS 过滤关键词（路径含关键词即排除，大小写不敏感，替换语义） |
+| `nasFilterMinBytes` | `30720` | NAS 过滤：小于此字节数的文件视为缩略图/图标排除（0=不限） |
+| `dedupEnabled` | `true` | 是否启用内容级去重（sha256 完全重复 + dHash 近似重复），播放跳过 |
+| `dedupPHashThreshold` | `5` | dHash 海明距离 ≤ 此值视为近似重复（0-64，越小越严格） |
+| `heicEnabled` | `true` | 是否支持 HEIC/HEIF（需系统 `heif-convert`，不可用时自动降级跳过） |
+| `vlmEnabled` | `false` | 是否启用 VLM（ollama 视觉模型）打标签 + 非照片判定（重，默认关） |
+| `vlmModel` | `minicpm-v` | ollama 视觉模型名（minicpm-v / llama3.2-vision / llava 等） |
+| `ollamaUrl` | `http://localhost:11434` | ollama API 地址 |
 
 ## 测试地图
 
-`flutter test` 共 57 个用例，全部是纯 Dart 单测（无 widget 测试）：
+`flutter test` 共 70 个用例，全部是纯 Dart 单测（无 widget 测试）：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
 | `test/app_config_test.dart` | 3 | AppConfig NAS 字段：默认值、`fromJson({})` 回落默认、toJson/fromJson 往返逐字段相等 |
 | `test/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
-| `test/control_server_test.dart` | 8 | 控制台页 GET /、WS 连接即发状态快照（含 `nas` 字段）、指令执行与事件/状态广播、文字指令走意图解析、音量设置、multipart 上传照片（含非图片拒绝）、非法 WS 消息容错 |
+| `test/control_server_test.dart` | 13 | 控制台页 GET /、WS 连接即发状态快照（含 `nas` 字段）、指令执行与事件/状态广播、文字指令走意图解析、音量设置、multipart 上传照片（含非图片拒绝）、非法 WS 消息容错、NAS 配置端点（GET 读取不含密码、POST 保存密码空=不改、POST test 不可达 ok:false）、保存后 nas 状态广播 |
 | `test/intent_parser_test.dart` | 9 | `parseIntent`：天气 / 时间 / 日期 / 农历 / 照片切换 / 音量 / 播报 / 其他（显示二维码、帮助、未知）/ 带标点结尾 |
-| `test/nas_filter_test.dart` | 6 | `nasPhotoAllowed`：关键词命中路径任意段排除（大小写不敏感）、内置截图文件名正则、普通照片放行、`enabled=false` 全放行、keywords 替换语义、空串关键词跳过 |
+| `test/nas_filter_test.dart` | 8 | `nasPhotoAllowed`：关键词命中路径任意段排除（大小写不敏感）、内置截图文件名正则、普通照片放行、`enabled=false` 全放行、keywords 替换语义、空串关键词跳过、`@eaDir` 段排除、小文件（size<minBytes）排除 |
 | `test/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器（`dart:io HttpServer`）端到端：ping + 递归列出（截图被过滤且计入 `lastFilteredCount`）、downloadTo 写盘长度正确、401 时 ping 抛异常、未 configure/remoteDir 空返回空 |
-| `test/photo_service_test.dart` | 15 | `PhotoService`：本地+NAS 混合列表排序与 id、`currentName`、fileFor 本地直返、NAS 下载入缓存与命中不重复下载、LRU 淘汰、NAS 失败静默降级（连接失败/未启用/未配置）、无缓存目录返回 null、rescan 保持当前张、next/prev 环绕与 setDir、prefetchNext 预取、`applyNasConfig` 首次刷新 fire-and-forget 不阻塞、下载中断清理部分缓存文件、nasStatus 含已过滤计数 |
+| `test/photo_service_test.dart` | 18 | `PhotoService`：本地+NAS 混合列表排序与 id、`currentName`、fileFor 本地直返、NAS 下载入缓存与命中不重复下载、LRU 淘汰、NAS 失败静默降级（连接失败/未启用/未配置）、无缓存目录返回 null、rescan 保持当前张、next/prev 环绕与 setDir、prefetchNext 预取、`applyNasConfig` 首次刷新 fire-and-forget 不阻塞、下载中断清理部分缓存文件、nasStatus 含已过滤计数、playable 跳过视图（setHidden 后 current/next/prev 跳过、全 hidden 退化、next/prev 环绕跳过） |
+| `test/photo_index_service_test.dart` | 3 | `PhotoIndexService`（F 后只读守护进程库）：读库 hidden→setHidden + indexStatus 统计、byTag 筛选、byPerson/persons 读 faces（预置 SQLite） |
 | `test/protocol_test.dart` | 5 | `decodeCommand`（合法、带参数、非法输入抛 `FormatException`）、`encodeState`、`encodeEvent` |
 | `test/weather_service_test.dart` | 2 | `weatherCodeText` 天气码文案、`weatherFromJson` 解析 Open-Meteo 响应 |
