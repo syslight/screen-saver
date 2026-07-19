@@ -1,0 +1,22 @@
+# smart_frame 文档初始化进度
+
+- Task 1 (AGENTS.md): complete (review clean; Minor: bundle 路径措辞可更精确；⚠️ win/mac 构建命令本机不可验证，裁决为标准 Flutter 命令予以保留)
+- Task 2 (docs/requirements.md): complete (初审 1 Important→FR-W-4 已修，复审 Approved)
+- Task 3 (docs/architecture.md): complete (review Approved; 2 Minor 已修；另连带修正 AGENTS.md 键盘总线口径——代码事实为键盘直连服务)
+- Task 4 (docs/protocol.md): complete (初审 2 Important+1 Minor 已修，复审 Approved)
+- Task 5 (docs/voice-pipeline.md): complete (review Approved; 2 Minor 已修，AGENTS.md 同步约定补登记 voice/protocol)
+- Task 6 (docs/development.md): complete (review Approved; 2 Minor 记录不修：orc 软链表述、降级日志绝对化措辞)
+- Task 7 (docs/deployment.md): complete (review Approved; 3 Minor 记录不修：icudtl 注释、base_url 措辞沿 README、指针略偏)
+- Task 8 (docs/roadmap.md): complete (review Approved 零 Important; 2 Minor 记录不修)
+- Task 9 (docs/README.md + README 挂链 + 全量验收): complete (review Approved; “五大功能”措辞已修；索引 8 行不自索引系裁定)
+- 最终整体审查: READY; 1 Important(FR-M-7 键盘口径)+2 Minor 已由单一 fixer 修正; 终审后 analyze/test 全绿
+- 子项目 1 (NAS 图源) 开始执行，6 任务
+- NAS Task 1 (AppConfig 7 字段): complete (review Approved; 32 用例全绿; Minor: cast 惰性边界可接受)
+- NAS Task 2 (过滤模块): complete (简报矛盾经裁决=替换语义，review Approved; Minor: 空串 keyword 守卫缺测试，留给 Task 6 顺带补)
+- NAS Task 3 (NasPhotoSource): complete (review Approved; 41 用例全绿; 提醒 Task 4: 先写 filter 字段再触发刷新)
+- NAS Task 4 (PhotoService 聚合): complete (review Approved; 53 用例全绿; 2 个真实边缘 Minor 转 Task 5 顺带修：LRU 勿删刚下载文件、状态变化 notifyListeners)
+- NAS Task 5 (UI 装配): complete (初审 1 Important _loadingId 卡死+1 Minor mounted 已修，复审 Approved)
+- NAS Task 6 (文档同步+验收): complete (review Approved; 1 Important development.md 日期已由 controller 一词修正; 54 用例全绿; 冒烟: 新代码实机启动正常)
+- 最终整体审查: READY 带 2 Important(启动阻塞、规格 4 处出入)+1 Minor(缓存残留)
+- 最终修复包: 5 项全修(fire-and-forget 首刷/缓存残留清理+日志/过滤计数入状态/控制台 NAS 行/规格偏差注记), 复审 Approved; 57 用例全绿
+- 子项目 1 收尾完成
