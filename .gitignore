@@ -52,3 +52,8 @@ daemon/.venv/
 **/__pycache__/
 *.db
 
+# Android Gradle build 输出（local.properties/.gradle 已由 android/.gitignore 忽略）
+android/**/build/
+android/**/.cxx/
+android/captures/
+

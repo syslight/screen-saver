@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:http/http.dart' as http;
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart';
@@ -83,6 +85,9 @@ class ControlServer {
       ..get('/api/index/bytag', _onIndexByTag)
       ..get('/api/index/byperson', _onIndexByPerson)
       ..get('/api/index/persons', _onIndexPersons)
+      ..get('/api/search/similar', (r) => _proxySearch(r, 'similar'))
+      ..get('/api/search/text', (r) => _proxySearch(r, 'text'))
+      ..post('/api/annotate', _onAnnotate)
       ..post('/api/photos', _onUpload);
 
     _server = await shelf_io.serve(router.call, InternetAddress.anyIPv4, port);
@@ -242,6 +247,40 @@ class ControlServer {
   Future<Response> _onIndexPersons(Request req) async {
     final persons = await photoIndex.persons();
     return Response.ok(jsonEncode({'persons': persons}), headers: _jsonHeaders);
+  }
+
+  /// 人工标注：标记照片为某类别（重复/低画质/广告/截图等）→ hidden，不再显示。
+  Future<Response> _onAnnotate(Request req) async {
+    try {
+      final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+      final id = body['id'] as String?;
+      final reason = body['reason'] as String?;
+      if (id == null || reason == null) {
+        return Response.badRequest(
+            body: jsonEncode({'ok': false, 'error': 'missing id/reason'}),
+            headers: _jsonHeaders);
+      }
+      await photoIndex.annotate(id, reason);
+      return Response.ok(jsonEncode({'ok': true}), headers: _jsonHeaders);
+    } catch (e) {
+      return Response.internalServerError(
+          body: jsonEncode({'ok': false, 'error': '$e'}),
+          headers: _jsonHeaders);
+    }
+  }
+
+  /// 代理向量搜索到 daemon search_server（localhost:8781）。
+  /// web 控制台只调 control_server（8780），由这里转发，避免跨端口。
+  Future<Response> _proxySearch(Request req, String kind) async {
+    try {
+      final resp = await http.get(
+          Uri.parse('http://localhost:8781/api/search/$kind?${req.url.query}'));
+      return Response(resp.statusCode, body: resp.body, headers: _jsonHeaders);
+    } catch (e) {
+      return Response.internalServerError(
+          body: jsonEncode({'error': '搜索服务不可用: $e'}),
+          headers: _jsonHeaders);
+    }
   }
 
   /// 读 NAS 配置：密码不返回，仅告知是否已设置（前端留空=不改）。

@@ -16,6 +16,7 @@ abstract class PhotoIndexBackend {
   Future<Set<String>> byTag(String tag);
   Future<Set<String>> byPerson(String person);
   Future<List<String>> persons();
+  Future<void> markHidden(String id, String reason);
   void close();
 }
 
@@ -29,6 +30,7 @@ class SqliteIndexBackend implements PhotoIndexBackend {
   Future<void> open() async {
     sqfliteFfiInit();
     _db = await databaseFactoryFfi.openDatabase(dbPath);
+    await _db!.execute('PRAGMA busy_timeout=5000'); // 等 5s 避免与守护进程写冲突
     await _ensureSchema(_db!);
   }
 
@@ -74,6 +76,12 @@ class SqliteIndexBackend implements PhotoIndexBackend {
         'SELECT DISTINCT subject_name FROM faces WHERE subject_name IS NOT NULL '
         'ORDER BY subject_name');
     return rows.map((r) => r['subject_name'] as String).toList();
+  }
+
+  @override
+  Future<void> markHidden(String id, String reason) async {
+    await _db!
+        .execute('UPDATE photos SET hidden=1, reason=? WHERE id=?', [reason, id]);
   }
 
   Future<void> _ensureSchema(Database db) async {
@@ -149,6 +157,13 @@ class HttpIndexBackend implements PhotoIndexBackend {
   }
 
   @override
+  Future<void> markHidden(String id, String reason) async {
+    await http.post(Uri.parse('$baseUrl/api/annotate'),
+        headers: {'content-type': 'application/json'},
+        body: jsonEncode({'id': id, 'reason': reason}));
+  }
+
+  @override
   void close() {}
 }
 
@@ -215,6 +230,27 @@ class PhotoIndexService extends ChangeNotifier {
   Future<Set<String>> byTag(String tag) => backend.byTag(tag);
   Future<Set<String>> byPerson(String person) => backend.byPerson(person);
   Future<List<String>> persons() => backend.persons();
+
+  /// 人工标注：标记照片为某类别并立即隐藏（playable 跳过）。存 reason=`user_<类别>`。
+  /// 守护进程并发写同一 SQLite 会 locked，PRAGMA busy_timeout 在 sqflite_ffi 不透传，
+  /// 故在此重试（5 次 × 500ms，daemon 短事务重试必中）。
+  Future<void> annotate(String id, String reason) async {
+    for (var i = 0; i < 10; i++) {
+      try {
+        await backend.markHidden(id, 'user_$reason');
+        break;
+      } catch (e) {
+        if (i < 4 && e.toString().contains('locked')) {
+          await Future.delayed(const Duration(milliseconds: 500));
+          continue;
+        }
+        rethrow;
+      }
+    }
+    _lastHidden = {..._lastHidden, id};
+    _photos.setHidden([id]);
+    notifyListeners();
+  }
 
   bool _setEq(Set<String> a, Set<String> b) =>
       a.length == b.length && a.containsAll(b);

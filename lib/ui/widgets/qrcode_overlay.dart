@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
+import '../../config/app_config.dart';
 import '../../server/control_server.dart';
 
 /// 控制台二维码浮层：手机扫码进入 Web 控制台。
@@ -12,8 +13,12 @@ class QrCodeOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final server = context.read<ControlServer>();
-    final url = server.url ?? '服务器启动中…';
+    // display 节点显示计算节点 URL（自己不跑控制台）；compute 显示自己的
+    final isDisplay =
+        context.read<ConfigService>().config.serverRole == 'display';
+    final url = isDisplay
+        ? context.read<ConfigService>().config.computeNodeUrl
+        : (context.read<ControlServer>().url ?? '服务器启动中…');
     return GestureDetector(
       onTap: onClose,
       child: Container(
@@ -31,9 +36,9 @@ class QrCodeOverlay extends StatelessWidget {
                 const Text('手机扫码控制',
                     style: TextStyle(fontSize: 24, color: Colors.white)),
                 const SizedBox(height: 20),
-                if (server.url != null)
+                if (url != '服务器启动中…' && url.isNotEmpty)
                   QrImageView(
-                    data: server.url!,
+                    data: url,
                     size: 260,
                     backgroundColor: Colors.white,
                   ),

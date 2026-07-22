@@ -1,14 +1,19 @@
+import 'dart:async';
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../services/command_service.dart';
+import '../services/photo_index_service.dart';
 import '../services/photo_service.dart';
 import '../voice/voice_provider.dart';
 import 'widgets/calendar_widget.dart';
 import 'widgets/clock_widget.dart';
 import 'widgets/photo_slideshow.dart';
+import 'widgets/annotate_bar.dart';
 import 'widgets/qrcode_overlay.dart';
 import 'widgets/settings_sheet.dart';
 import 'widgets/voice_indicator.dart';
@@ -46,10 +51,32 @@ class _DashboardPageState extends State<DashboardPage> {
         context.read<VoiceProvider>().triggerListen();
         return KeyEventResult.handled;
       case LogicalKeyboardKey.escape:
-        windowManager.setFullScreen(false);
+        if (!Platform.isAndroid) windowManager.setFullScreen(false);
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.digit1:
+        unawaited(_annotate(context, 'duplicate'));
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.digit2:
+        unawaited(_annotate(context, 'low_quality'));
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.digit3:
+        unawaited(_annotate(context, 'ad'));
+        return KeyEventResult.handled;
+      case LogicalKeyboardKey.digit4:
+        unawaited(_annotate(context, 'screenshot'));
         return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
+  }
+
+  /// 人工标注当前照片（键盘 1-4）→ 立即隐藏并跳下一张。
+  Future<void> _annotate(BuildContext context, String reason) async {
+    final photos = context.read<PhotoService>();
+    final index = context.read<PhotoIndexService>();
+    final cur = photos.current;
+    if (cur == null) return;
+    await index.annotate(cur.id, reason);
+    photos.next();
   }
 
   @override
@@ -110,6 +137,16 @@ class _DashboardPageState extends State<DashboardPage> {
                 setState(() => _qrVisible = false);
                 context.read<CommandService>().dismissQr();
               }),
+            // 标注浮层：底部居中，默认半透明（0.2），hover 强化（1.0）
+            Positioned(
+              bottom: 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: AnnotateBar(
+                    onAnnotate: (reason) => _annotate(context, reason)),
+              ),
+            ),
           ],
         ),
       ),

@@ -1,9 +1,8 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -27,7 +26,7 @@ import 'voice/voice_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await windowManager.ensureInitialized();
+  if (!Platform.isAndroid) await windowManager.ensureInitialized();
 
   final supportDir = await getApplicationSupportDirectory();
   final configService = ConfigService(supportDir.path);
@@ -37,8 +36,8 @@ Future<void> main() async {
   // 相册目录不存在则创建
   await Directory(config.photoDir).create(recursive: true);
 
-  // 检测系统 heif-convert（HEIC 解码依赖）
-  await PhotoService.detectHeifConvert();
+  // 检测系统 heif-convert（HEIC 解码依赖；Android 无此工具，display 照片已由计算端转 jpg）
+  if (!Platform.isAndroid) await PhotoService.detectHeifConvert();
   // 节点角色：compute 直连 NAS + 本地 SQLite；display 从 computeNodeUrl 拉照片/索引
   final isDisplay = config.serverRole == 'display';
   // NAS 图源：按配置建客户端；缓存目录放在应用支持目录下
@@ -115,14 +114,20 @@ Future<void> main() async {
       photoIndex: photoIndex,
       voice: isDisplay ? null : voice,
       ttsController: ttsController);
-  try {
-    await server.start();
-  } catch (e) {
-    debugPrint('控制台服务器启动失败: $e');
+  if (!isDisplay) {
+    try {
+      await server.start();
+    } catch (e) {
+      debugPrint('控制台服务器启动失败: $e');
+    }
   }
 
   unawaited(WakelockPlus.enable());
-  unawaited(windowManager.setFullScreen(true));
+  if (Platform.isAndroid) {
+    await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  } else {
+    unawaited(windowManager.setFullScreen(true));
+  }
 
   runApp(
     MultiProvider(

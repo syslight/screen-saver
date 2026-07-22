@@ -35,6 +35,10 @@
   .cfg-result { font-size: 13px; margin-top: 8px; min-height: 18px; color: var(--dim); }
   .cfg-result.ok { color: #4caf50; }
   .cfg-result.err { color: #f44336; }
+  .search-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:6px; margin-top:10px; }
+  .search-grid .item { cursor:pointer; }
+  .search-grid img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:6px; background:#121417; }
+  .search-grid .cap { font-size:11px; color:var(--dim); text-align:center; }
 </style>
 </head>
 <body>
@@ -60,6 +64,15 @@
       <button class="secondary" onclick="cmd('refresh_weather')">刷新天气</button>
       <button class="secondary" onclick="cmd('show_qr')">显示二维码</button>
     </div>
+  </div>
+
+  <div class="card">
+    <h2>向量搜索</h2>
+    <div class="row" style="flex-wrap:nowrap">
+      <input type="text" id="searchInput" placeholder="如：猫 / 海边 / 证件照" enterkeyhint="search">
+      <button style="flex:0 0 auto" onclick="searchText()">搜索</button>
+    </div>
+    <div id="searchResults" class="search-grid"></div>
   </div>
 
   <div class="card">
@@ -284,6 +297,42 @@ async function saveNas() {
 
 connect();
 loadNasConfig();
+
+// ===== 向量搜索（文本 CLIP + 图相似 dinov2）=====
+async function searchText() {
+  const q = document.getElementById('searchInput').value.trim();
+  if (!q) return;
+  const grid = document.getElementById('searchResults');
+  grid.innerHTML = '<div style="color:var(--dim)">搜索中…</div>';
+  try {
+    const r = await fetch('/api/search/text?q=' + encodeURIComponent(q) + '&n=24');
+    const d = await r.json();
+    renderResults(d.results || []);
+  } catch (e) {
+    grid.innerHTML = '<div style="color:#f44336">搜索失败（搜索服务未启动？）</div>';
+  }
+}
+
+async function searchSimilar(idEnc) {
+  const grid = document.getElementById('searchResults');
+  grid.innerHTML = '<div style="color:var(--dim)">找相似…</div>';
+  const r = await fetch('/api/search/similar?id=' + idEnc + '&n=24');
+  const d = await r.json();
+  renderResults(d.results || []);
+}
+
+function renderResults(results) {
+  const grid = document.getElementById('searchResults');
+  if (!results.length) { grid.innerHTML = '<div style="color:var(--dim)">无结果</div>'; return; }
+  grid.innerHTML = results.map(r => {
+    const idEnc = encodeURIComponent(r.id);
+    return '<div class="item" onclick="searchSimilar(\'' + idEnc + '\')">' +
+      '<img src="/api/photos/file?id=' + idEnc + '" loading="lazy">' +
+      '<div class="cap">' + r.score + '</div></div>';
+  }).join('');
+}
+
+document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') searchText(); });
 </script>
 </body>
 </html>

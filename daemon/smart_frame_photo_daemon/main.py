@@ -138,7 +138,7 @@ def main(argv=None) -> int:
                     except Exception as e:
                         print(f"  ! vlm: {e}", flush=True)
                 n_ok += 1
-                if (i + 1) % 50 == 0:
+                if (i + 1) % 5 == 0:
                     conn.commit()
                     print(f"  进度 {i+1}/{len(todo)}", flush=True)
         conn.commit()
