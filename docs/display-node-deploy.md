@@ -1,7 +1,11 @@
-# ARM 展示节点部署
+# ARM / Android 展示节点部署
 
 ARM 开发板（arm64 Ubuntu）跑展示 app，照片/索引/语音模型全从 x86 计算节点拉。
 ARM 只做：展示轮播 + 录音采集 + 播放，不需要 sherpa_onnx / sqflite / heif-convert / NAS 直连。
+
+Android 版同样固定为 display 角色。首次启动会要求输入
+`http://<x86-IP>:8780`，通过 `/api/index/status` 验证后保存并进入主界面。
+Android Manifest 允许家庭局域网的明文 HTTP；不应将计算节点暴露到不可信网络。
 
 ## 前提
 - x86 计算节点已跑：`serverRole=compute`，`control_server :8780` 提供 `/api/photos/*` `/api/index/*` `/api/voice`，daemon 后台算索引
@@ -23,6 +27,15 @@ clone 项目 + `flutter pub get`。
 flutter build linux --release    # 出 build/linux/arm64/release/bundle/
 ```
 > Flutter 桌面不可交叉编译，必须在 arm64 主机上 build。
+
+Android APK 可在开发机构建：
+
+```bash
+flutter build apk --release
+```
+
+产物为 `build/app/outputs/flutter-apk/app-release.apk`，当前仅包含
+`arm64-v8a`。首次启动时确保 Android 设备和计算节点在同一局域网。
 
 ## 配置（display 角色）
 `~/.local/share/com.example.smart_frame/config.json`：

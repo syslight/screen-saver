@@ -17,6 +17,7 @@ abstract class PhotoIndexBackend {
   Future<Set<String>> byPerson(String person);
   Future<List<String>> persons();
   Future<void> markHidden(String id, String reason);
+  Future<Set<String>> searchText(String query);
   void close();
 }
 
@@ -82,6 +83,15 @@ class SqliteIndexBackend implements PhotoIndexBackend {
   Future<void> markHidden(String id, String reason) async {
     await _db!
         .execute('UPDATE photos SET hidden=1, reason=? WHERE id=?', [reason, id]);
+  }
+
+  @override
+  Future<Set<String>> searchText(String query) async {
+    // compute 节点：调自己的 control_server（代理 daemon search_server）
+    final resp = await http.get(Uri.parse(
+        'http://localhost:8780/api/search/text?q=${Uri.encodeQueryComponent(query)}&n=500'));
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    return (body['results'] as List).map((e) => e['id'] as String).toSet();
   }
 
   Future<void> _ensureSchema(Database db) async {
@@ -164,6 +174,14 @@ class HttpIndexBackend implements PhotoIndexBackend {
   }
 
   @override
+  Future<Set<String>> searchText(String query) async {
+    final resp = await http.get(Uri.parse(
+        '$baseUrl/api/search/text?q=${Uri.encodeQueryComponent(query)}&n=500'));
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+    return (body['results'] as List).map((e) => e['id'] as String).toSet();
+  }
+
+  @override
   void close() {}
 }
 
@@ -230,6 +248,7 @@ class PhotoIndexService extends ChangeNotifier {
   Future<Set<String>> byTag(String tag) => backend.byTag(tag);
   Future<Set<String>> byPerson(String person) => backend.byPerson(person);
   Future<List<String>> persons() => backend.persons();
+  Future<Set<String>> searchText(String query) => backend.searchText(query);
 
   /// 人工标注：标记照片为某类别并立即隐藏（playable 跳过）。存 reason=`user_<类别>`。
   /// 守护进程并发写同一 SQLite 会 locked，PRAGMA busy_timeout 在 sqflite_ffi 不透传，

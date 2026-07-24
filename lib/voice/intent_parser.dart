@@ -14,6 +14,8 @@ enum IntentType {
   announce,
   showQr,
   help,
+  filter,
+  clearFilter,
   unknown,
 }
 
@@ -36,8 +38,9 @@ Intent parseIntent(String raw) {
   // 播报：以"播报"/"说"开头
   for (final prefix in ['播报', '说']) {
     if (text.startsWith(prefix) && text.length > prefix.length) {
-      final rest =
-          text.substring(prefix.length).replaceFirst(RegExp(r'^[：:，,\s]+'), '');
+      final rest = text
+          .substring(prefix.length)
+          .replaceFirst(RegExp(r'^[：:，,\s]+'), '');
       if (rest.isNotEmpty) return Intent(IntentType.announce, text: rest);
     }
   }
@@ -80,6 +83,24 @@ Intent parseIntent(String raw) {
   }
 
   if (text.contains('二维码')) return const Intent(IntentType.showQr);
+
+  // 清除指令必须先于通用的“播放 X”规则，避免“播放全部”被识别为筛选“全部”。
+  if (text.contains('取消筛选') ||
+      text.contains('取消过滤') ||
+      text.contains('全部照片') ||
+      text.contains('播放全部') ||
+      text == '全部') {
+    return const Intent(IntentType.clearFilter);
+  }
+
+  // 筛选播放：「放猫的照片」「播放猫的」「看猫」「只看风景」→ IntentType.filter
+  final m = RegExp(r'^(?:播放|放|看|只看|显示)(.+?)(?:的照片|的|了)?$').firstMatch(text);
+  if (m != null) {
+    final kw = m.group(1)!.trim();
+    if (kw.isNotEmpty && !['大', '小', '过'].contains(kw)) {
+      return Intent(IntentType.filter, text: kw);
+    }
+  }
   if (text.contains('帮助') ||
       text.contains('会什么') ||
       text.contains('能做什么') ||

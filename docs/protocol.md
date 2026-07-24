@@ -9,6 +9,8 @@
 | 方法与路径 | 处理 | 说明 |
 |---|---|---|
 | `GET /` | 返回控制台单页 | `content-type: text/html; charset=utf-8`，内容为 Flutter asset `web_console/index.html` |
+| `POST /api/filter` | 按 CLIP 文本语义筛选轮播 | JSON 请求 `{"q":"猫"}`；响应 `{"ok":true,"query":"猫","count":12}` |
+| `POST /api/filter/clear` | 清除语义筛选，恢复全部可播放照片 | 响应 `{"ok":true}` |
 | `GET /ws` | WebSocket 升级 | 指令与状态通道，消息格式见第 2、3 章 |
 | `GET /api/config` | 读 NAS 配置 | `application/json`，见第 5 章 |
 | `POST /api/config` | 保存 NAS 配置并即时生效 | `application/json`，见第 5 章 |

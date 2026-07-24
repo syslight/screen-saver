@@ -65,13 +65,15 @@ void main() {
   /// （http.Response 默认 latin1，中文响应必须走 bytes + utf-8）
   final mockHttp = MockClient((request) async {
     http.Response json(Object data) => http.Response.bytes(
-        utf8.encode(jsonEncode(data)), 200,
-        headers: {'content-type': 'application/json; charset=utf-8'});
+      utf8.encode(jsonEncode(data)),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
     if (request.url.host.contains('geocoding')) {
       return json({
         'results': [
-          {'name': '北京', 'latitude': 39.9, 'longitude': 116.4}
-        ]
+          {'name': '北京', 'latitude': 39.9, 'longitude': 116.4},
+        ],
       });
     }
     return json({
@@ -98,7 +100,9 @@ void main() {
 
   /// 执行 action 期间收集所有服务器消息
   Future<List<Map<String, dynamic>>> collectDuring(
-      Stream<dynamic> stream, Future<void> Function() action) async {
+    Stream<dynamic> stream,
+    Future<void> Function() action,
+  ) async {
     final messages = <Map<String, dynamic>>[];
     final sub = stream.map((m) => jsonDecode(m as String)).listen((m) {
       if (m is Map<String, dynamic>) messages.add(m);
@@ -117,31 +121,37 @@ void main() {
     configService = ConfigService(photoDir.path);
     await configService.load();
     configService.config.photoDir = photoDir.path;
-    nas = _FakeNasPhotoSource(refs: [
-      NasPhotoRef(path: '/photo/x.jpg', size: 10),
-      NasPhotoRef(path: '/photo/y.jpg', size: 20),
-    ]);
+    nas = _FakeNasPhotoSource(
+      refs: [
+        NasPhotoRef(path: '/photo/x.jpg', size: 10),
+        NasPhotoRef(path: '/photo/y.jpg', size: 20),
+      ],
+    );
 
     photos = PhotoService(photoDir.path);
     await photos.init();
     weather = WeatherService(city: '北京', client: mockHttp);
     tts = TtsService();
     commands = CommandService(
-        config: configService.config,
-        photos: photos,
-        weather: weather,
-        tts: tts);
+      config: configService.config,
+      photos: photos,
+      weather: weather,
+      tts: tts,
+    );
     photoIndex = PhotoIndexService(
-        photos, SqliteIndexBackend(p.join(photoDir.path, 'index_test.db')));
+      photos,
+      SqliteIndexBackend(p.join(photoDir.path, 'index_test.db')),
+    );
     await photoIndex.init(configService.config);
     server = ControlServer(
-        port: 0,
-        commands: commands,
-        photos: photos,
-        indexHtml: '<html>console</html>',
-        configService: configService,
-        nas: nas,
-        photoIndex: photoIndex);
+      port: 0,
+      commands: commands,
+      photos: photos,
+      indexHtml: '<html>console</html>',
+      configService: configService,
+      nas: nas,
+      photoIndex: photoIndex,
+    );
     await server.start();
     port = server.boundPort;
   });
@@ -156,6 +166,27 @@ void main() {
     final resp = await http.get(Uri.parse('http://localhost:$port/'));
     expect(resp.statusCode, 200);
     expect(resp.body, '<html>console</html>');
+  });
+
+  test('POST /api/filter 缺少查询时返回 400', () async {
+    final resp = await http.post(
+      Uri.parse('http://localhost:$port/api/filter'),
+      headers: {'content-type': 'application/json'},
+      body: '{}',
+    );
+    expect(resp.statusCode, 400);
+    expect(jsonDecode(resp.body), containsPair('ok', false));
+  });
+
+  test('POST /api/filter/clear 清除筛选并恢复全部照片', () async {
+    photos.setFilter({photos.photos.first.id});
+    expect(photos.playable, hasLength(1));
+    final resp = await http.post(
+      Uri.parse('http://localhost:$port/api/filter/clear'),
+    );
+    expect(resp.statusCode, 200);
+    expect(jsonDecode(resp.body), containsPair('ok', true));
+    expect(photos.playable, hasLength(2));
   });
 
   test('WS 连接即收到状态快照', () async {
@@ -176,12 +207,13 @@ void main() {
       ws.sink.add(jsonEncode({'type': 'command', 'action': 'next_photo'}));
     });
     expect(
-        messages
-            .any((m) => m['type'] == 'event' && m['message'] == '已切到下一张'),
-        isTrue);
+      messages.any((m) => m['type'] == 'event' && m['message'] == '已切到下一张'),
+      isTrue,
+    );
     expect(
-        messages.any((m) => m['type'] == 'state' && m['photo'] == 'b.png'),
-        isTrue);
+      messages.any((m) => m['type'] == 'state' && m['photo'] == 'b.png'),
+      isTrue,
+    );
     expect(photos.currentName, 'b.png');
     await ws.sink.close();
   });
@@ -190,8 +222,13 @@ void main() {
     final (ws, stream) = connectWs();
     await stream.first;
     final messages = await collectDuring(stream, () async {
-      ws.sink.add(jsonEncode(
-          {'type': 'command', 'action': 'text_command', 'text': '今天天气怎么样'}));
+      ws.sink.add(
+        jsonEncode({
+          'type': 'command',
+          'action': 'text_command',
+          'text': '今天天气怎么样',
+        }),
+      );
     });
     expect(messages.any((m) => m['type'] == 'event'), isTrue);
 
@@ -203,17 +240,24 @@ void main() {
   });
 
   test('设置音量并体现在状态里', () async {
-    await commands.executeCommand(decodeCommand(jsonEncode(
-        {'type': 'command', 'action': 'set_volume', 'value': 0.3})));
+    await commands.executeCommand(
+      decodeCommand(
+        jsonEncode({'type': 'command', 'action': 'set_volume', 'value': 0.3}),
+      ),
+    );
     expect(tts.volume, closeTo(0.3, 0.001));
     expect(commands.currentState()['volume'], closeTo(0.3, 0.001));
   });
 
   test('multipart 上传照片后相册立即可见', () async {
-    final request = http.MultipartRequest(
-        'POST', Uri.parse('http://localhost:$port/api/photos'))
-      ..files.add(http.MultipartFile.fromBytes('file', [7, 8, 9],
-          filename: 'c.jpg'));
+    final request =
+        http.MultipartRequest(
+            'POST',
+            Uri.parse('http://localhost:$port/api/photos'),
+          )
+          ..files.add(
+            http.MultipartFile.fromBytes('file', [7, 8, 9], filename: 'c.jpg'),
+          );
     final streamed = await request.send();
     expect(streamed.statusCode, 200);
     final body = jsonDecode(await streamed.stream.bytesToString());
@@ -224,9 +268,9 @@ void main() {
 
   test('上传非图片被拒绝保存', () async {
     final request = http.MultipartRequest(
-        'POST', Uri.parse('http://localhost:$port/api/photos'))
-      ..files
-          .add(http.MultipartFile.fromBytes('file', [1], filename: 'x.txt'));
+      'POST',
+      Uri.parse('http://localhost:$port/api/photos'),
+    )..files.add(http.MultipartFile.fromBytes('file', [1], filename: 'x.txt'));
     final streamed = await request.send();
     final body = jsonDecode(await streamed.stream.bytesToString());
     expect(body['saved'], 0);
@@ -239,8 +283,7 @@ void main() {
       ..nasWebdavUser = 'u'
       ..nasWebdavPassword = 'secret'
       ..nasRemoteDir = '/photo';
-    final resp =
-        await http.get(Uri.parse('http://localhost:$port/api/config'));
+    final resp = await http.get(Uri.parse('http://localhost:$port/api/config'));
     expect(resp.statusCode, 200);
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     expect(body['nasEnabled'], true);
@@ -325,10 +368,13 @@ void main() {
     });
     // applyNasConfig → _refreshNas 成功 → nasStatus 变 → CommandService 监听广播
     expect(
-        messages.any((m) =>
+      messages.any(
+        (m) =>
             m['type'] == 'state' &&
-            ((m['nas'] as String?) ?? '').contains('已连接')),
-        isTrue);
+            ((m['nas'] as String?) ?? '').contains('已连接'),
+      ),
+      isTrue,
+    );
     await ws.sink.close();
   });
 

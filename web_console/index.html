@@ -76,6 +76,16 @@
   </div>
 
   <div class="card">
+    <h2>筛选播放</h2>
+    <div class="row" style="flex-wrap:nowrap">
+      <input type="text" id="filterInput" placeholder="类别/主题：猫 / 海边 / 证件照 / 风景" enterkeyhint="search">
+      <button style="flex:0 0 auto" onclick="applyFilter()">筛选</button>
+      <button class="secondary" style="flex:0 0 auto" onclick="clearFilter()">全部</button>
+    </div>
+    <div id="filterResult" class="cfg-result"></div>
+  </div>
+
+  <div class="card">
     <h2>音量</h2>
     <input type="range" id="vol" min="0" max="100" value="80" onchange="cmd('set_volume', {value: this.valueAsNumber/100})">
   </div>
@@ -333,6 +343,43 @@ function renderResults(results) {
 }
 
 document.getElementById('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') searchText(); });
+
+// ===== 筛选播放（输入框 → app 轮播只播匹配的）=====
+async function applyFilter() {
+  const q = document.getElementById('filterInput').value.trim();
+  if (!q) return;
+  const el = document.getElementById('filterResult');
+  el.className = 'cfg-result'; el.textContent = '筛选中…';
+  try {
+    const r = await fetch('/api/filter', {
+      method: 'POST', headers: {'content-type': 'application/json'},
+      body: JSON.stringify({q}),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      el.className = 'cfg-result ok';
+      el.textContent = d.count > 0
+        ? `筛选「${d.query}」：${d.count} 张，轮播只播这些`
+        : `「${d.query}」无匹配`;
+    } else {
+      el.className = 'cfg-result err';
+      el.textContent = '筛选失败：' + (d.error || '');
+    }
+  } catch (e) {
+    el.className = 'cfg-result err';
+    el.textContent = '筛选失败（搜索服务未启动？）';
+  }
+}
+
+async function clearFilter() {
+  await fetch('/api/filter/clear', {method: 'POST'});
+  const el = document.getElementById('filterResult');
+  el.className = 'cfg-result ok';
+  el.textContent = '已恢复全部照片';
+  document.getElementById('filterInput').value = '';
+}
+
+document.getElementById('filterInput').addEventListener('keydown', e => { if (e.key === 'Enter') applyFilter(); });
 </script>
 </body>
 </html>

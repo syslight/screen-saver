@@ -50,6 +50,15 @@ void main() {
       expect(i2.text, '你好');
     });
 
+    test('语义筛选播放', () {
+      final cat = parseIntent('放猫的照片');
+      expect(cat.type, IntentType.filter);
+      expect(cat.text, '猫');
+      expect(parseIntent('只看风景').type, IntentType.filter);
+      expect(parseIntent('播放全部').type, IntentType.clearFilter);
+      expect(parseIntent('取消筛选').type, IntentType.clearFilter);
+    });
+
     test('其他', () {
       expect(parseIntent('显示二维码').type, IntentType.showQr);
       expect(parseIntent('你会做什么').type, IntentType.help);

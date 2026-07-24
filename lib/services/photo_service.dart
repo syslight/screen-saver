@@ -14,8 +14,8 @@ class PhotoItem {
   PhotoItem._({required this.id, required this.name, this.local, this.nas});
 
   /// 本地文件项（id 为文件路径）
-  factory PhotoItem.fromLocal(File file) => PhotoItem._(
-      id: file.path, name: p.basename(file.path), local: file);
+  factory PhotoItem.fromLocal(File file) =>
+      PhotoItem._(id: file.path, name: p.basename(file.path), local: file);
 
   /// NAS 引用项（id 为远程路径）
   factory PhotoItem.fromNas(NasPhotoRef ref) =>
@@ -40,8 +40,11 @@ class PhotoItem {
 /// 本地 30 秒定时重扫（手机上传后自动出现）；NAS 列表独立每 300 秒刷新。
 /// NAS 故障静默降级：只落 nasStatus，不抛异常、不影响本地相册。
 class PhotoService extends ChangeNotifier {
-  PhotoService(this.photoDir,
-      {this.cacheDir = '', this.cacheLimitBytes = defaultCacheLimitBytes});
+  PhotoService(
+    this.photoDir, {
+    this.cacheDir = '',
+    this.cacheLimitBytes = defaultCacheLimitBytes,
+  });
 
   static const imageExts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'];
 
@@ -84,6 +87,9 @@ class PhotoService extends ChangeNotifier {
   /// 被去重/质量规则隐藏的 photo id（播放跳过，不进 playable 视图）
   final Set<String> _hiddenIds = {};
 
+  /// 筛选白名单（「放猫的」等）；null = 不筛选，播全部 playable
+  Set<String>? _filterIds;
+
   NasSource? _nas;
   bool _nasEnabled = false;
   String _nasStatus = '未启用';
@@ -109,10 +115,15 @@ class PhotoService extends ChangeNotifier {
     return current!.name;
   }
 
-  /// 可播放视图：photos 减去 _hiddenIds。[_index] 是此视图的下标。
-  List<PhotoItem> get playable => _hiddenIds.isEmpty
-      ? photos
-      : photos.where((p) => !_hiddenIds.contains(p.id)).toList();
+  /// 可播放视图：photos 减去 _hiddenIds；若有 [_filterIds] 再取交集（筛选模式）。
+  /// [_index] 是此视图的下标。
+  List<PhotoItem> get playable {
+    final base = _hiddenIds.isEmpty
+        ? photos
+        : photos.where((p) => !_hiddenIds.contains(p.id)).toList();
+    final f = _filterIds;
+    return f == null ? base : base.where((p) => f.contains(p.id)).toList();
+  }
 
   /// 被去重/质量规则隐藏的数量
   int get hiddenCount => _hiddenIds.isEmpty
@@ -136,6 +147,16 @@ class PhotoService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 筛选播放（「放猫的」）：只播 [ids] 内的照片；传 null 清除筛选播全部。
+  void setFilter(Set<String>? ids) {
+    final curId = current?.id;
+    _filterIds = ids;
+    _realignIndex(curId);
+    notifyListeners();
+  }
+
+  void clearFilter() => setFilter(null);
+
   /// 按 [currentId] 在 playable 中重定位 [_index]（photos/hidden 变化后调用）
   void _realignIndex(String? currentId) {
     final p = playable;
@@ -157,7 +178,9 @@ class PhotoService extends ChangeNotifier {
   Future<void> init() async {
     await rescan();
     _rescanTimer = Timer.periodic(
-        const Duration(seconds: 30), (_) => unawaited(rescan()));
+      const Duration(seconds: 30),
+      (_) => unawaited(rescan()),
+    );
   }
 
   Future<void> setDir(String dir) async {
@@ -171,8 +194,10 @@ class PhotoService extends ChangeNotifier {
     _slideshowSeconds = seconds;
     _slideshowTimer?.cancel();
     if (seconds > 0) {
-      _slideshowTimer =
-          Timer.periodic(Duration(seconds: seconds), (_) => _advance(1, user: false));
+      _slideshowTimer = Timer.periodic(
+        Duration(seconds: seconds),
+        (_) => _advance(1, user: false),
+      );
     }
   }
 
@@ -208,7 +233,11 @@ class PhotoService extends ChangeNotifier {
   /// 首次刷新是 fire-and-forget（NAS 不可达时连接超时 8 秒，不得阻塞
   /// 启动与设置保存），完成后由 _refreshNas 内部 notifyListeners 更新状态。
   /// 未启用/未配置时清空 NAS 列表；失败只落 nasStatus，不抛异常。
-  Future<void> applyNasConfig(AppConfig config, NasSource nas) async {
+  Future<void> applyNasConfig(
+    AppConfig config,
+    NasSource nas, {
+    bool forceEnabled = false,
+  }) async {
     // 过滤配置先写入，再触发 listPhotos
     if (nas is NasPhotoSource) {
       nas.filterEnabled = config.nasFilterEnabled;
@@ -216,8 +245,11 @@ class PhotoService extends ChangeNotifier {
       nas.filterMinBytes = config.nasFilterMinBytes;
     }
     _nas = nas;
-    _nasEnabled = config.nasEnabled && config.nasRemoteDir.isNotEmpty;
-    if (!config.nasEnabled) {
+    _nasEnabled =
+        forceEnabled || (config.nasEnabled && config.nasRemoteDir.isNotEmpty);
+    if (forceEnabled) {
+      _nasStatus = '连接中';
+    } else if (!config.nasEnabled) {
       _nasStatus = '未启用';
     } else if (config.nasRemoteDir.isEmpty) {
       _nasStatus = '未配置';
@@ -228,7 +260,9 @@ class PhotoService extends ChangeNotifier {
       // 刷新完成后由 _refreshNas 内部 notifyListeners 更新状态与列表
       unawaited(_refreshNas());
       _nasTimer = Timer.periodic(
-          const Duration(seconds: 300), (_) => unawaited(_refreshNas()));
+        const Duration(seconds: 300),
+        (_) => unawaited(_refreshNas()),
+      );
       unawaited(_evictCache()); // 启动（应用配置）时做一次淘汰检查
     } else {
       if (_nasRefs.isNotEmpty) {
@@ -340,8 +374,10 @@ class PhotoService extends ChangeNotifier {
   /// 缓存文件名 = sha256(远程路径) 前 16 位 + 扩展名（HEIC 统一以 .jpg 缓存，
   /// 下载时由 heif-convert 转换；桌面 Flutter 不原生解 HEIC）。
   String _cachePathFor(String remotePath) {
-    final hash =
-        sha256.convert(utf8.encode(remotePath)).toString().substring(0, 16);
+    final hash = sha256
+        .convert(utf8.encode(remotePath))
+        .toString()
+        .substring(0, 16);
     final ext = p.extension(remotePath).toLowerCase();
     final cacheExt = heicExts.contains(ext) ? '.jpg' : ext;
     return p.join(cacheDir, '$hash$cacheExt');

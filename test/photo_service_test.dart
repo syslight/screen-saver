@@ -12,8 +12,8 @@ import 'package:smart_frame/services/photo_service.dart';
 /// 假 NAS 图源：返回固定 ref 列表；downloadTo 把固定字节写入 savePath 并计数。
 class FakeNasSource implements NasSource {
   FakeNasSource({List<NasPhotoRef>? refs, List<int>? fileBytes})
-      : refs = refs ?? [],
-        fileBytes = fileBytes ?? const [1, 2, 3];
+    : refs = refs ?? [],
+      fileBytes = fileBytes ?? const [1, 2, 3];
 
   List<NasPhotoRef> refs;
   final List<int> fileBytes;
@@ -73,16 +73,22 @@ void main() {
       File(p.join(photoDir.path, name)).writeAsBytes(bytes ?? [1, 2, 3]);
 
   PhotoService makeService({int cacheLimitBytes = 500 * 1024 * 1024}) =>
-      PhotoService(photoDir.path,
-          cacheDir: cacheDir.path, cacheLimitBytes: cacheLimitBytes);
+      PhotoService(
+        photoDir.path,
+        cacheDir: cacheDir.path,
+        cacheLimitBytes: cacheLimitBytes,
+      );
 
   AppConfig nasConfig({bool enabled = true, String remoteDir = '/photo'}) =>
       AppConfig(nasEnabled: enabled, nasRemoteDir: remoteDir);
 
   /// applyNasConfig 的首次 NAS 刷新是 fire-and-forget：轮询直到状态达到预期。
   /// 状态赋值与列表重建在 _refreshNas 内同步完成，状态对即列表对。
-  Future<void> pumpNasRefresh(PhotoService service, FakeNasSource nas,
-      String status) async {
+  Future<void> pumpNasRefresh(
+    PhotoService service,
+    FakeNasSource nas,
+    String status,
+  ) async {
     for (var i = 0; i < 200; i++) {
       if (nas.listCallCount > 0 && service.nasStatus == status) return;
       await Future<void>.delayed(const Duration(milliseconds: 5));
@@ -141,21 +147,59 @@ void main() {
     expect(service.current!.name, 'c.jpg');
   });
 
+  test('筛选白名单与 hidden 取交集，清除后恢复全部可播放照片', () async {
+    await writeLocal('a.jpg');
+    await writeLocal('b.jpg');
+    await writeLocal('c.jpg');
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.rescan();
+    final ids = {for (final item in service.photos) item.name: item.id};
+
+    service.setHidden([ids['b.jpg']!]);
+    service.setFilter({ids['b.jpg']!, ids['c.jpg']!});
+    expect(service.playable.map((p) => p.name), ['c.jpg']);
+    expect(service.currentName, 'c.jpg');
+
+    service.clearFilter();
+    expect(service.playable.map((p) => p.name), ['a.jpg', 'c.jpg']);
+  });
+
+  test('空筛选结果安全退化为无当前照片', () async {
+    await writeLocal('a.jpg');
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.rescan();
+
+    service.setFilter({});
+    expect(service.playable, isEmpty);
+    expect(service.current, isNull);
+    expect(service.currentName, '（全部已过滤）');
+    service.next();
+    service.prev();
+  });
+
   test('混合列表：本地在前按 name 排序，NAS 在后按 name 排序', () async {
     await writeLocal('b.jpg');
     await writeLocal('a.jpg');
-    final nas = FakeNasSource(refs: [
-      NasPhotoRef(path: '/photo/d.jpg', size: 10),
-      NasPhotoRef(path: '/photo/c.jpg', size: 10),
-    ]);
+    final nas = FakeNasSource(
+      refs: [
+        NasPhotoRef(path: '/photo/d.jpg', size: 10),
+        NasPhotoRef(path: '/photo/c.jpg', size: 10),
+      ],
+    );
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();
     await service.applyNasConfig(nasConfig(), nas);
     await pumpNasRefresh(service, nas, '已连接 2 张');
 
-    expect(service.photos.map((i) => i.name),
-        ['a.jpg', 'b.jpg', 'c.jpg', 'd.jpg']);
+    expect(service.photos.map((i) => i.name), [
+      'a.jpg',
+      'b.jpg',
+      'c.jpg',
+      'd.jpg',
+    ]);
     expect(service.photos.take(2).every((i) => !i.isNas), isTrue);
     expect(service.photos.skip(2).every((i) => i.isNas), isTrue);
     // id：本地为文件路径，NAS 为远程路径
@@ -178,7 +222,8 @@ void main() {
     expect(service.currentName, 'a.jpg');
 
     final nas = FakeNasSource(
-        refs: [NasPhotoRef(path: '/photo/sub/c.jpg', size: 1)]);
+      refs: [NasPhotoRef(path: '/photo/sub/c.jpg', size: 1)],
+    );
     await service.applyNasConfig(nasConfig(), nas);
     await pumpNasRefresh(service, nas, '已连接 1 张');
     service.next(); // 本地 a.jpg → NAS c.jpg
@@ -198,8 +243,9 @@ void main() {
   });
 
   test('fileFor NAS 项：首次下载入缓存，再次命中不重复下载', () async {
-    final nas =
-        FakeNasSource(refs: [NasPhotoRef(path: '/photo/c.jpg', size: 3)]);
+    final nas = FakeNasSource(
+      refs: [NasPhotoRef(path: '/photo/c.jpg', size: 3)],
+    );
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();
@@ -231,12 +277,14 @@ void main() {
     // 预置一个 600B 的旧缓存文件
     final oldFile = File(p.join(cacheDir.path, 'old.jpg'));
     await oldFile.writeAsBytes(List.filled(600, 0x61));
-    await oldFile
-        .setLastModified(DateTime.now().subtract(const Duration(days: 1)));
+    await oldFile.setLastModified(
+      DateTime.now().subtract(const Duration(days: 1)),
+    );
 
     final nas = FakeNasSource(
-        refs: [NasPhotoRef(path: '/photo/c.jpg', size: 600)],
-        fileBytes: List.filled(600, 0x62));
+      refs: [NasPhotoRef(path: '/photo/c.jpg', size: 600)],
+      fileBytes: List.filled(600, 0x62),
+    );
     final service = makeService(cacheLimitBytes: 1000);
     addTearDown(service.dispose);
     await service.rescan();
@@ -266,7 +314,8 @@ void main() {
   test('nasEnabled=false：NAS 项不进列表，nasStatus 为未启用', () async {
     await writeLocal('a.jpg');
     final nas = FakeNasSource(
-        refs: [NasPhotoRef(path: '/photo/c.jpg', size: 1)]);
+      refs: [NasPhotoRef(path: '/photo/c.jpg', size: 1)],
+    );
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();
@@ -277,10 +326,30 @@ void main() {
     expect(nas.listCallCount, 0, reason: '未启用时不应访问 NAS');
   });
 
+  test('forceEnabled 使展示节点在 NAS 配置关闭时仍拉取 HTTP 图源', () async {
+    final nas = FakeNasSource(
+      refs: [NasPhotoRef(path: '/compute/a.jpg', size: 1)],
+    );
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.rescan();
+
+    await service.applyNasConfig(
+      nasConfig(enabled: false),
+      nas,
+      forceEnabled: true,
+    );
+    await pumpNasRefresh(service, nas, '已连接 1 张');
+
+    expect(nas.listCallCount, 1);
+    expect(service.photos.single.id, '/compute/a.jpg');
+  });
+
   test('nasEnabled=true 但 remoteDir 为空：nasStatus 为未配置', () async {
     await writeLocal('a.jpg');
     final nas = FakeNasSource(
-        refs: [NasPhotoRef(path: '/photo/c.jpg', size: 1)]);
+      refs: [NasPhotoRef(path: '/photo/c.jpg', size: 1)],
+    );
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();
@@ -292,8 +361,9 @@ void main() {
   });
 
   test('缓存目录未注入时 NAS 项不可 fileFor（返回 null 且不下载）', () async {
-    final nas =
-        FakeNasSource(refs: [NasPhotoRef(path: '/photo/c.jpg', size: 1)]);
+    final nas = FakeNasSource(
+      refs: [NasPhotoRef(path: '/photo/c.jpg', size: 1)],
+    );
     final service = PhotoService(photoDir.path); // 不给 cacheDir
     addTearDown(service.dispose);
     await service.rescan();
@@ -333,8 +403,9 @@ void main() {
     service.next(); // 环绕回 0
     expect(service.currentName, 'a.jpg');
 
-    final newDir =
-        await Directory.systemTemp.createTemp('photo_service_setdir');
+    final newDir = await Directory.systemTemp.createTemp(
+      'photo_service_setdir',
+    );
     addTearDown(() => newDir.delete(recursive: true));
     await File(p.join(newDir.path, 'x.jpg')).writeAsBytes([9]);
     await service.setDir(newDir.path);
@@ -343,10 +414,12 @@ void main() {
   });
 
   test('prefetchNext 预下载下一张 NAS 图；下一张是本地则不下载', () async {
-    final nas = FakeNasSource(refs: [
-      NasPhotoRef(path: '/photo/c.jpg', size: 3),
-      NasPhotoRef(path: '/photo/d.jpg', size: 3),
-    ]);
+    final nas = FakeNasSource(
+      refs: [
+        NasPhotoRef(path: '/photo/c.jpg', size: 3),
+        NasPhotoRef(path: '/photo/d.jpg', size: 3),
+      ],
+    );
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();
@@ -385,8 +458,7 @@ void main() {
         .applyNasConfig(nasConfig(), nas)
         .then((_) => returned = true);
     await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect(returned, isTrue,
-        reason: 'NAS 不可达时（连接超时 8 秒）启动与设置保存不得被阻塞');
+    expect(returned, isTrue, reason: 'NAS 不可达时（连接超时 8 秒）启动与设置保存不得被阻塞');
     expect(nas.listCallCount, 1, reason: '刷新应已触发，只是不等待其完成');
     await done;
 
@@ -397,8 +469,8 @@ void main() {
 
   test('NAS 下载中途失败：返回 null 且不残留部分缓存文件', () async {
     final nas = FakeNasSource(
-        refs: [NasPhotoRef(path: '/photo/c.jpg', size: 3)])
-      ..downloadThrowsPartial = true;
+      refs: [NasPhotoRef(path: '/photo/c.jpg', size: 3)],
+    )..downloadThrowsPartial = true;
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();
@@ -408,8 +480,10 @@ void main() {
 
     expect(await service.fileFor(item), isNull);
     // 缓存路径不得残留部分文件，否则 cachedFileFor 误命中、永久黑块
-    final cachePath = p.join(cacheDir.path,
-        '${sha256.convert(utf8.encode('/photo/c.jpg')).toString().substring(0, 16)}.jpg');
+    final cachePath = p.join(
+      cacheDir.path,
+      '${sha256.convert(utf8.encode('/photo/c.jpg')).toString().substring(0, 16)}.jpg',
+    );
     expect(await File(cachePath).exists(), isFalse, reason: '部分文件应被清理');
     expect(service.cachedFileFor(item), isNull);
 
@@ -419,12 +493,13 @@ void main() {
   });
 
   test('NAS 状态含被过滤数量：已连接 N 张（已过滤 M）', () async {
-    final nas = FakeNasSource(refs: [
-      NasPhotoRef(path: '/photo/a.jpg', size: 1),
-      NasPhotoRef(path: '/photo/b.jpg', size: 1),
-      NasPhotoRef(path: '/photo/c.jpg', size: 1),
-    ])
-      ..filteredCount = 1; // 模拟真实源：1 张截图被过滤规则排除
+    final nas = FakeNasSource(
+      refs: [
+        NasPhotoRef(path: '/photo/a.jpg', size: 1),
+        NasPhotoRef(path: '/photo/b.jpg', size: 1),
+        NasPhotoRef(path: '/photo/c.jpg', size: 1),
+      ],
+    )..filteredCount = 1; // 模拟真实源：1 张截图被过滤规则排除
     final service = makeService();
     addTearDown(service.dispose);
     await service.rescan();

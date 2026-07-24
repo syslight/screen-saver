@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../config/app_config.dart';
+import 'photo_index_service.dart';
 import '../server/protocol.dart';
 import '../services/calendar_service.dart';
 import '../services/photo_service.dart';
@@ -28,6 +29,9 @@ class CommandService extends ChangeNotifier {
   final PhotoService photos;
   final WeatherService weather;
   final TtsService tts;
+
+  /// 索引服务（筛选播放用，main 装配后注入）。null = 筛选不可用。
+  PhotoIndexService? photoIndex;
 
   /// 事件消息（给控制台日志）
   void Function(String message)? onEvent;
@@ -164,7 +168,23 @@ class CommandService extends ChangeNotifier {
         reply = '二维码已显示在屏幕上。';
       case IntentType.help:
         reply = '我可以播报天气、时间和农历，可以切换照片、调节音量。'
-            '你也可以用手机给我传照片、让我传话。';
+            '你也可以用手机给我传照片、让我传话，或者说放猫的照片。';
+      case IntentType.filter:
+        final kw = intent.text ?? '';
+        if (kw.isEmpty) {
+          reply = '要放什么？比如放猫的照片。';
+        } else if (photoIndex == null) {
+          reply = '索引服务不可用，无法筛选。';
+        } else {
+          final ids = await photoIndex!.searchText(kw);
+          photos.setFilter(ids);
+          reply = ids.isEmpty
+              ? '没找到和$kw相关的照片。'
+              : '好的，放$kw的照片，共${ids.length}张。';
+        }
+      case IntentType.clearFilter:
+        photos.clearFilter();
+        reply = '好的，播放全部照片。';
       case IntentType.unknown:
         reply = '没听懂。你可以问天气、问日期，或者说下一张、音量大一点。';
     }

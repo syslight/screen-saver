@@ -172,9 +172,9 @@ https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-k
 
 系统 TTS 再失败仅记日志，不抛出。
 
-## 6. 意图种类表（13 种）
+## 6. 意图种类表（15 种）
 
-`parseIntent`（`intent_parser.dart:32-91`，纯 Dart 无外部依赖）把识别文字映射为 `IntentType` 枚举，共 13 个值（`intent_parser.dart:4-18`）。语音 ASR 结果与手机端 `text_command` 文字指令**共用同一入口** `CommandService.executeText`（`command_service.dart:91`），因此下表对两种输入一致。
+`parseIntent`（`lib/voice/intent_parser.dart`，纯 Dart 无外部依赖）把识别文字映射为 `IntentType` 枚举，共 15 个值。语音 ASR 结果与手机端 `text_command` 文字指令**共用同一入口** `CommandService.executeText`，因此下表对两种输入一致。
 
 解析顺序即匹配优先级（顺序影响结果，与代码一致）：
 
@@ -183,8 +183,9 @@ https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-k
 3. `天气` → `weather`；`农历`/`阴历` → `lunar`；`几点`/`时间` → `time`；`几号`/`日期`/`星期`/`什么日子` → `date`。
 4. `上一张`/`前一张` → `prevPhoto`；`下一张`/`换一张`/`换一个` → `nextPhoto`。
 5. 音量带数字（正则 `音量[^\d]{0,4}(\d{1,3})`，大于 1 视为百分比，clamp 到 0..1）→ `setVolume`；否则含 `音量` 且含 `大`/`高`/`加` → `volumeUp`，含 `小`/`低`/`减` → `volumeDown`。
-6. `二维码` → `showQr`；`帮助`/`会什么`/`能做什么`/`会做什么` → `help`。
-7. 都不匹配 → `unknown`。
+6. `二维码` → `showQr`；`取消筛选`/`全部照片`/`播放全部` → `clearFilter`。
+7. `播放`/`放`/`看`/`只看`/`显示` + 主题 → `filter`；`帮助`/`会什么`/`能做什么`/`会做什么` → `help`。
+8. 都不匹配 → `unknown`。
 
 | IntentType | 匹配关键词（`contains`，除标注外） | 示例话术 | 执行与回复（`executeIntent`，`command_service.dart:93-149`） |
 |---|---|---|---|
@@ -199,6 +200,8 @@ https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-k
 | `setVolume` | 音量 + 数字（正则） | 音量调到 50 | 设为指定值（`50`→0.5），回复`音量调到 50%。` |
 | `announce` | 前缀 `播报` / `说` + 内容 | 播报：开饭了 | 用 TTS 播报剥掉 `播报`/`说` 前缀及前导分隔符（`：:，,` 与空白）后的内容（`intent_parser.dart:39-41` 的 `rest`），回复`好的。` |
 | `showQr` | 二维码 | 显示二维码 | 屏幕弹出控制台二维码浮层，回复`二维码已显示在屏幕上。` |
+| `filter` | 播放/放/看/只看/显示 + 主题 | 放猫的照片 | CLIP 文本搜索后仅轮播匹配 id；无结果时回复未找到 |
+| `clearFilter` | 取消筛选 / 取消过滤 / 全部照片 / 播放全部 | 播放全部 | 清除筛选白名单，恢复全部可播放照片 |
 | `help` | 帮助 / 会什么 / 能做什么 / 会做什么 | 你会做什么 | `我可以播报天气、时间和农历，可以切换照片、调节音量。你也可以用手机给我传照片、让我传话。` |
 | `unknown` | （兜底） | 任意其他话 | `没听懂。你可以问天气、问日期，或者说下一张、音量大一点。` |
 

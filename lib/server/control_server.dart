@@ -88,6 +88,8 @@ class ControlServer {
       ..get('/api/search/similar', (r) => _proxySearch(r, 'similar'))
       ..get('/api/search/text', (r) => _proxySearch(r, 'text'))
       ..post('/api/annotate', _onAnnotate)
+      ..post('/api/filter', _onFilter)
+      ..post('/api/filter/clear', _onFilterClear)
       ..post('/api/photos', _onUpload);
 
     _server = await shelf_io.serve(router.call, InternetAddress.anyIPv4, port);
@@ -267,6 +269,34 @@ class ControlServer {
           body: jsonEncode({'ok': false, 'error': '$e'}),
           headers: _jsonHeaders);
     }
+  }
+
+  /// 筛选播放：CLIP 文本搜索 → photos.setFilter，app 轮播只播匹配的。
+  /// 类别/主题/匹配都走这里（"猫"/"海边"/"证件照" → CLIP 语义匹配）。
+  Future<Response> _onFilter(Request req) async {
+    try {
+      final body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+      final q = (body['q'] as String?)?.trim() ?? '';
+      if (q.isEmpty) {
+        return Response.badRequest(
+            body: jsonEncode({'ok': false, 'error': 'missing q'}),
+            headers: _jsonHeaders);
+      }
+      final ids = await photoIndex.searchText(q);
+      photos.setFilter(ids);
+      return Response.ok(
+          jsonEncode({'count': ids.length, 'query': q, 'ok': true}),
+          headers: _jsonHeaders);
+    } catch (e) {
+      return Response.internalServerError(
+          body: jsonEncode({'ok': false, 'error': '$e'}),
+          headers: _jsonHeaders);
+    }
+  }
+
+  Future<Response> _onFilterClear(Request req) async {
+    photos.clearFilter();
+    return Response.ok(jsonEncode({'ok': true}), headers: _jsonHeaders);
   }
 
   /// 代理向量搜索到 daemon search_server（localhost:8781）。

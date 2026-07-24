@@ -18,6 +18,7 @@ import 'services/nas_photo_source.dart';
 import 'services/photo_service.dart';
 import 'services/weather_service.dart';
 import 'ui/dashboard_page.dart';
+import 'ui/android_setup_page.dart';
 import 'voice/asr_client.dart';
 import 'voice/tts_service.dart';
 import 'voice/voice_client.dart';
@@ -31,6 +32,22 @@ Future<void> main() async {
   final supportDir = await getApplicationSupportDirectory();
   final configService = ConfigService(supportDir.path);
   await configService.load();
+  if (Platform.isAndroid) {
+    configService.config.serverRole = 'display';
+    if (!validComputeNodeUrl(configService.config.computeNodeUrl)) {
+      runApp(
+        AndroidSetupApp(
+          configService: configService,
+          onConfigured: () => _startSmartFrame(configService),
+        ),
+      );
+      return;
+    }
+  }
+  await _startSmartFrame(configService);
+}
+
+Future<void> _startSmartFrame(ConfigService configService) async {
   final config = configService.config;
 
   // 相册目录不存在则创建
@@ -43,23 +60,29 @@ Future<void> main() async {
   // NAS 图源：按配置建客户端；缓存目录放在应用支持目录下
   final NasSource nasSource = isDisplay
       ? HttpPhotoSource(config.computeNodeUrl)
-      : (NasPhotoSource()
-          ..configure(
-              url: config.nasWebdavUrl,
-              user: config.nasWebdavUser,
-              password: config.nasWebdavPassword,
-              remoteDir: config.nasRemoteDir));
-  final photos = PhotoService(config.photoDir,
-      cacheDir: p.join(supportDir.path, 'nas-cache'))
-    ..heicEnabled = config.heicEnabled;
+      : (NasPhotoSource()..configure(
+          url: config.nasWebdavUrl,
+          user: config.nasWebdavUser,
+          password: config.nasWebdavPassword,
+          remoteDir: config.nasRemoteDir,
+        ));
+  final photos = PhotoService(
+    config.photoDir,
+    cacheDir: p.join(configService.supportDir, 'nas-cache'),
+  )..heicEnabled = config.heicEnabled;
   final weather = WeatherService(city: config.city);
   final tts = TtsService(voice: config.ttsVoice, volume: config.volume);
   final asr = AsrClient(
-      baseUrl: config.asrBaseUrl,
-      apiKey: config.asrApiKey,
-      model: config.asrModel);
+    baseUrl: config.asrBaseUrl,
+    apiKey: config.asrApiKey,
+    model: config.asrModel,
+  );
   final commands = CommandService(
-      config: config, photos: photos, weather: weather, tts: tts);
+    config: config,
+    photos: photos,
+    weather: weather,
+    tts: tts,
+  );
   // C/S：compute 跑 VoicePipeline（KWS/ASR/TTS，external WS 服务 ARM）；
   // display 用 VoiceClient（record→WS，收 state/TTS→播），不跑模型。
   final StreamController<Uint8List>? ttsController;
@@ -86,7 +109,7 @@ Future<void> main() async {
   // 各服务独立初始化，单个失败不影响整体
   await photos.init();
   // 应用 NAS 配置；内部按 nasEnabled 决定是否真连，失败静默降级
-  await photos.applyNasConfig(config, nasSource);
+  await photos.applyNasConfig(config, nasSource, forceEnabled: isDisplay);
   photos.startSlideshow(config.slideshowSeconds);
   weather.start(refreshMinutes: config.weatherRefreshMinutes);
   if (isDisplay) {
@@ -98,22 +121,23 @@ Future<void> main() async {
   // 照片索引/去重服务：compute 读本地 SQLite（守护进程写），display 走 HTTP
   final photoIndexBackend = isDisplay
       ? HttpIndexBackend(config.computeNodeUrl)
-      : SqliteIndexBackend(p.join(supportDir.path, 'photo_index.db'));
+      : SqliteIndexBackend(p.join(configService.supportDir, 'photo_index.db'));
   final photoIndex = PhotoIndexService(photos, photoIndexBackend);
   await photoIndex.init(config);
+  commands.photoIndex = photoIndex; // 筛选播放（语音/控制台「放猫的」）
 
-  final indexHtml =
-      await rootBundle.loadString('web_console/index.html');
+  final indexHtml = await rootBundle.loadString('web_console/index.html');
   final server = ControlServer(
-      port: config.serverPort,
-      commands: commands,
-      photos: photos,
-      indexHtml: indexHtml,
-      configService: configService,
-      nas: nasSource,
-      photoIndex: photoIndex,
-      voice: isDisplay ? null : voice,
-      ttsController: ttsController);
+    port: config.serverPort,
+    commands: commands,
+    photos: photos,
+    indexHtml: indexHtml,
+    configService: configService,
+    nas: nasSource,
+    photoIndex: photoIndex,
+    voice: isDisplay ? null : voice,
+    ttsController: ttsController,
+  );
   if (!isDisplay) {
     try {
       await server.start();
