@@ -2,6 +2,10 @@
 
 跑在 Windows / macOS / Linux 上的全屏智能屏应用（电子相框），Flutter 桌面端。
 
+本仓库也已开始承载独立的家庭 Agent 基础设施：`home_agent/` 是本地优先的 Python
+服务端和 Linux 房间节点，`packages/node_protocol/` 是未来 Linux/Android 节点共用的
+Dart 协议包。现有智能屏仍可独立运行，两套服务暂不互相依赖。
+
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Platform](https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-blue)
 
@@ -26,9 +30,24 @@
 flutter pub get
 flutter run -d linux          # 开发运行（全屏）
 flutter build linux --release # 出包：build/linux/x64/release/bundle/
+flutter build apk --release   # Android arm64 展示端
 ```
 
+家庭 Agent 阶段 1：
+
+```bash
+cd home_agent
+uv sync --frozen
+uv run home-agent             # 默认 http://127.0.0.1:8790
+```
+
+首次启动后通过 `/api/v1/bootstrap` 创建家庭和第一位家长，再由家长创建一次性节点配对码。
+完整 API 和节点消息见 [`docs/home-agent-protocol.md`](docs/home-agent-protocol.md)。当前仅提供
+本机 HTTP/WS 开发链路，局域网真设备接入前必须配置 TLS，不得暴露到公网。
+
 在 Windows / macOS 上同理（`flutter run -d windows` / `-d macos`，构建需对应系统）。
+Android 首次启动需输入同一局域网内的计算节点地址，详见
+[`docs/display-node-deploy.md`](docs/display-node-deploy.md)。
 
 ## 键盘快捷键
 
@@ -43,14 +62,14 @@ flutter build linux --release # 出包：build/linux/x64/release/bundle/
 ## 手机控制台
 
 1. 按 **Q** 显示二维码，手机扫码（需与电脑同一局域网），或浏览器直接访问 `http://<电脑IP>:8780`
-2. 功能：查看状态、切换照片、调节音量、发文字指令、让屏幕播报、上传照片、配置 NAS 相册
+2. 功能：查看状态、切换照片、调节音量、发文字指令、让屏幕播报、按语义筛选播放、上传照片、配置 NAS 相册
 3. 多台手机可同时连接，状态实时同步
 
 ## 语音交互
 
 - 首次启动会在后台下载唤醒词模型（约 15MB），下载完成后说出默认唤醒词即可唤醒（模型来自 sherpa-onnx wenetspeech KWS，自定义唤醒词可编辑配置目录下 `kws-model/keywords.txt`）
 - 唤醒词下载失败或不想用时：**空格键** 或手机控制台的文字指令同样可用
-- 支持的话术示例：今天天气怎么样 / 现在几点 / 今天几号 / 农历多少 / 下一张 / 音量大一点 / 播报：开饭了 / 显示二维码 / 你会做什么
+- 支持的话术示例：今天天气怎么样 / 现在几点 / 今天几号 / 农历多少 / 下一张 / 音量大一点 / 放猫的照片 / 播放全部 / 播报：开饭了 / 显示二维码 / 你会做什么
 - 语音识别需要 OpenAI 兼容的 Whisper API（在设置 S 里配置 `base_url` 和 `key`，可指向 OpenAI、Groq 或本地 faster-whisper 服务）；未配置时语音链路自动降级，其余功能不受影响
 - TTS 默认使用 edge-tts（免费，中文语音自然），网络不可达时回退系统 TTS（Linux `espeak-ng` / macOS `say` / Windows SAPI）
 
@@ -108,6 +127,8 @@ lib/
   voice/                      唤醒词(KWS)、ASR 客户端、意图解析、edge-tts、状态机
   ui/                         全屏仪表盘与各小组件
 web_console/index.html        手机控制台单页（原生 JS，打包进 assets）
+home_agent/                   家庭 Agent Server + Linux Room Node（独立 Python/uv 工程）
+packages/node_protocol/       Linux/Android 房间节点共享 Dart 协议模型
 ```
 
 手机 WS 指令与语音/文字意图统一进 `CommandService` 处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为历史直连实现（不经总线、不触发广播），新增指令不得绕过总线。

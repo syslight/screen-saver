@@ -210,3 +210,24 @@ main：NasPhotoSource.configure(url/user/password/remoteDir)（仅建客户端�
 | `path` | 路径处理 | 路径拼接、扩展名判断、上传文件名清洗 |
 | `crypto` | SHA256 | edge-tts `Sec-MS-GEC` 访问令牌计算（`TtsService.secMsGec`）；NAS 缓存文件名哈希（`PhotoService` `_cachePathFor`） |
 | `webdav_client` | NAS WebDAV 客户端 | 群晖等 NAS 的 PROPFIND 递归列目录与 GET 下载，纯 Dart；用 `dart:io HttpServer` 起假 WebDAV 服务器即可端到端单测（`test/nas_photo_source_test.dart`） |
+
+## 9. 家庭 Agent 基础设施
+
+家庭 Agent 与当前智能屏内嵌 `ControlServer` 是两个独立服务。阶段 1 不改造现有 Flutter
+指令总线，也不调用硬件或模型：
+
+```text
+家长 Web/App ── HTTP bearer ──▶ Home Agent Server
+                                      │
+                           SQLite/WAL + Alembic
+                                      │
+       Linux/Android Room Node ── WebSocket ──┘
+          配对码→设备密钥       hello/能力/心跳/命令
+```
+
+- `home_agent/src/home_agent/`：FastAPI API、认证、配对、repository、审计和在线节点 registry。
+- `home_agent/src/linux_room_node/`：独立假节点进程；保存权限为 `0600` 的设备凭据，断线指数退避。
+- `packages/node_protocol/`：Dart 信封和能力模型；与 Python 读取同一份 canonical fixtures。
+- 数据库只保存密码的 Argon2id 哈希和 token/code/device key 的 SHA-256 哈希；明文凭据只返回一次。
+- WebSocket 首帧必须是已认证 `node.hello`；断线清理使用受取消保护的短事务，避免残留在线状态。
+- 协议和 API 详见 [home-agent-protocol.md](home-agent-protocol.md)。

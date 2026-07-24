@@ -1,0 +1,67 @@
+[project]
+name = "family-home-agent"
+version = "0.1.0"
+description = "Local-first family agent server and room-node foundation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "aiosqlite>=0.21.0",
+  "alembic>=1.16.4",
+  "argon2-cffi>=25.1.0",
+  "fastapi>=0.116.1",
+  "httpx>=0.28.1",
+  "pydantic-settings>=2.10.1",
+  "sqlalchemy>=2.0.41",
+  "uvicorn>=0.35.0",
+  "websockets>=15.0.1",
+]
+
+[dependency-groups]
+dev = [
+  "mypy>=1.17.0",
+  "pytest>=8.4.1",
+  "pytest-asyncio>=1.1.0",
+  "pytest-cov>=6.2.1",
+  "ruff>=0.12.5",
+]
+
+[project.scripts]
+home-agent = "home_agent.app:main"
+fake-room-node = "linux_room_node.fake:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/home_agent", "src/linux_room_node"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/home_agent/api/*.py" = ["B008"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["home_agent", "linux_room_node"]
+plugins = ["pydantic.mypy", "sqlalchemy.ext.mypy.plugin"]
+
+[tool.coverage.run]
+branch = true
+concurrency = ["thread", "greenlet"]
+source = ["home_agent", "linux_room_node"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true

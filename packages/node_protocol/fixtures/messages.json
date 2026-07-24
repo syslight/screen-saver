@@ -1,0 +1,166 @@
+{
+  "valid": [
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000001",
+      "sequence": 1,
+      "type": "node.hello",
+      "sentAt": "2026-07-24T12:00:00Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {
+        "deviceKey": "example-device-key-not-a-secret",
+        "softwareVersion": "0.1.0",
+        "platform": "linux-fake",
+        "mediaProtocolVersion": 0
+      }
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000002",
+      "sequence": 2,
+      "type": "node.capabilities",
+      "sentAt": "2026-07-24T12:00:01Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {
+        "capabilities": [{
+          "capabilityId": "fake-camera",
+          "type": "camera",
+          "status": "online",
+          "properties": {"supportsStill": true},
+          "commands": ["fake.set_status"]
+        }]
+      }
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000003",
+      "sequence": 3,
+      "type": "heartbeat.ping",
+      "sentAt": "2026-07-24T12:00:02Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"nonce": "ping-1"}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000004",
+      "sequence": 1,
+      "type": "command.request",
+      "sentAt": "2026-07-24T12:00:03Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"commandName": "fake.echo", "arguments": {"text": "你好"}}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000005",
+      "sequence": 4,
+      "type": "command.result",
+      "sentAt": "2026-07-24T12:00:04Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"requestMessageId": "10000000-0000-4000-8000-000000000004", "success": true, "result": {"text": "你好"}, "errorCode": null}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000006",
+      "sequence": 5,
+      "type": "node.event",
+      "sentAt": "2026-07-24T12:00:05Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"eventName": "fake.activity", "data": {"active": true}}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000007",
+      "sequence": 2,
+      "type": "error",
+      "sentAt": "2026-07-24T12:00:06Z",
+      "nodeId": null,
+      "roomId": null,
+      "sessionId": null,
+      "payload": {"code": "example", "message": "Example error", "details": {}}
+    }
+  ],
+  "invalid": [
+    {
+      "code": "unsupported_protocol_version",
+      "message": {
+        "protocolVersion": 2,
+        "messageId": "10000000-0000-4000-8000-000000000008",
+        "sequence": 1,
+        "type": "node.hello",
+        "sentAt": "2026-07-24T12:00:00Z",
+        "nodeId": null,
+        "roomId": null,
+        "sessionId": null,
+        "payload": {}
+      }
+    },
+    {
+      "code": "unknown_message_type",
+      "message": {
+        "protocolVersion": 1,
+        "messageId": "10000000-0000-4000-8000-000000000009",
+        "sequence": 1,
+        "type": "unknown",
+        "sentAt": "2026-07-24T12:00:00Z",
+        "nodeId": null,
+        "roomId": null,
+        "sessionId": null,
+        "payload": {}
+      }
+    },
+    {
+      "code": "invalid_payload",
+      "message": {
+        "protocolVersion": 1,
+        "messageId": "10000000-0000-4000-8000-000000000010",
+        "sequence": 1,
+        "type": "heartbeat.ping",
+        "sentAt": "2026-07-24T12:00:00Z",
+        "nodeId": null,
+        "roomId": null,
+        "sessionId": null,
+        "payload": {}
+      }
+    },
+    {
+      "code": "invalid_envelope",
+      "message": {
+        "protocolVersion": 1,
+        "messageId": "not-a-uuid",
+        "sequence": 1,
+        "type": "heartbeat.ping",
+        "sentAt": "2026-07-24T12:00:00Z",
+        "nodeId": null,
+        "roomId": null,
+        "sessionId": null,
+        "payload": {"nonce": "ping"}
+      }
+    },
+    {
+      "code": "invalid_payload",
+      "message": {
+        "protocolVersion": 1,
+        "messageId": "10000000-0000-4000-8000-000000000011",
+        "sequence": 1,
+        "type": "heartbeat.ping",
+        "sentAt": "2026-07-24T12:00:00Z",
+        "nodeId": null,
+        "roomId": null,
+        "sessionId": null,
+        "payload": {"nonce": "ping", "unexpected": true}
+      }
+    }
+  ]
+}

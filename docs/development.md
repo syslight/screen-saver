@@ -58,6 +58,30 @@ export LIBRARY_PATH=$HOME/.local/opt/gst/usr/lib/x86_64-linux-gnu
 
 无额外系统依赖说明，按 Flutter 官方桌面平台要求准备好 Xcode / Visual Studio 即可；构建必须在对应系统上进行（`flutter run -d windows` / `-d macos`）。
 
+### 1.5 Home Agent
+
+家庭 Agent 使用 Python 3.12 和 uv，与照片 `daemon/` 的虚拟环境、依赖和数据库完全隔离：
+
+```bash
+cd home_agent
+uv sync --frozen
+uv run alembic upgrade head
+uv run home-agent
+```
+
+默认数据目录为 `~/.local/share/family-home-agent`，默认只监听 `127.0.0.1:8790`。
+环境变量见 `home_agent/.env.example`。当前 HTTP/WS 只允许本机开发；真设备进入局域网前必须
+增加 TLS/反向代理，不能把 bearer token 或设备密钥通过明文网络传输。
+
+假节点获得家长端创建的一次性配对码后运行：
+
+```bash
+cd home_agent
+uv run fake-room-node --pairing-code '<一次性配对码>'
+```
+
+终端只显示凭据文件路径，不打印设备密钥；下次启动省略 `--pairing-code` 即可复用设备凭据。
+
 ## 2. 日常命令
 
 ```bash
@@ -67,6 +91,23 @@ flutter test                                 # 57 个用例，详见第 4 章
 flutter run -d linux                         # 开发运行（全屏）
 flutter build linux|windows|macos --release  # 出包在 build/<平台>/.../release/ 下
 ```
+
+Home Agent 与共享协议包质量门禁：
+
+```bash
+cd home_agent
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest --cov=home_agent --cov=linux_room_node
+
+cd ../packages/node_protocol
+/home/peidong/flutter/bin/dart analyze
+/home/peidong/flutter/bin/dart test
+```
+
+Python 集成测试会在临时目录迁移数据库，并在 localhost 启动真实 Uvicorn + Fake Room Node，
+自动验证初始化、登录、配对、能力上报、`fake.echo` 命令和断线状态，不依赖外网或真硬件。
 
 **代理注意事项**：本机代理（127.0.0.1:10808）会劫持 flutter_tester 的 localhost WebSocket，导致 `test` / `run` 失败，跑之前必须先清掉代理变量（原理与解法见第 5.1 节）：
 

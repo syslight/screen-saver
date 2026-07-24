@@ -49,6 +49,10 @@ app.*.map.json
 
 # Python 守护进程（daemon/）：uv 虚拟环境 + 字节码 + 本地 SQLite/模型缓存
 daemon/.venv/
+home_agent/.venv/
+home_agent/.env
+home_agent/.coverage
+home_agent/data/
 **/__pycache__/
 *.db
 
@@ -56,4 +60,3 @@ daemon/.venv/
 android/**/build/
 android/**/.cxx/
 android/captures/
-
