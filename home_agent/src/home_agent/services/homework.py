@@ -19,6 +19,7 @@ from home_agent.errors import DomainError
 from home_agent.repositories.audit import AuditRepository
 from home_agent.repositories.auth import AuthenticatedParent
 from home_agent.repositories.homework import HomeworkRepository
+from home_agent.repositories.student import StudentPrincipal
 
 MEMBER_ROLES = {"parent", "child", "elder"}
 TASK_STATUSES = {
@@ -185,6 +186,33 @@ class HomeworkService:
         await self._task_event(parent, task, "homework.task.started")
         return task
 
+    async def start_task_for_student(self, student: StudentPrincipal, task_id: str) -> HomeworkTask:
+        task = await self.require_student_task(student, task_id)
+        if task.status != "pending":
+            raise DomainError(
+                "invalid_task_state", "Only pending tasks can be started", status_code=409
+            )
+        task.status = "in_progress"
+        task.updated_at = utc_now()
+        await self.repository.add_event(
+            household_id=student.device.household_id,
+            task_id=task.id,
+            submission_id=None,
+            actor_type="student_device",
+            actor_id=student.device.id,
+            event_type="homework.task.started",
+        )
+        await self.audit.add(
+            household_id=student.device.household_id,
+            actor_type="student_device",
+            actor_id=student.device.id,
+            action="homework.task.start",
+            resource_type="homework_task",
+            resource_id=task.id,
+        )
+        await self.session.flush()
+        return task
+
     async def cancel_task(self, parent: AuthenticatedParent, task_id: str) -> HomeworkTask:
         task = await self.require_task(parent.user.household_id, task_id)
         if task.status in {"completed", "cancelled"}:
@@ -240,6 +268,61 @@ class HomeworkService:
         )
         await self._audit(
             parent, "homework.submission.create", "homework_submission", submission.id
+        )
+        await self.session.flush()
+        return submission
+
+    async def create_submission_for_student(
+        self,
+        student: StudentPrincipal,
+        task_id: str,
+        assets: list[dict[str, Any]],
+        submission_id: str | None = None,
+    ) -> HomeworkSubmission:
+        task = await self.require_student_task(student, task_id)
+        if task.status != "in_progress":
+            raise DomainError(
+                "invalid_task_state", "Task does not accept student submissions", status_code=409
+            )
+        submission = HomeworkSubmission(
+            id=submission_id or new_id(),
+            household_id=student.device.household_id,
+            task_id=task.id,
+            attempt_no=await self.repository.next_attempt(student.device.household_id, task.id),
+            submitted_by=student.device.id,
+            status="needs_parent_review",
+        )
+        self.session.add(submission)
+        await self.session.flush()
+        for item in assets:
+            self.session.add(
+                SubmissionAsset(
+                    household_id=student.device.household_id,
+                    submission_id=submission.id,
+                    media_type=item["media_type"],
+                    local_path=item["local_path"],
+                    sha256=item["sha256"],
+                    size_bytes=item["size_bytes"],
+                )
+            )
+        task.status = "needs_parent_review"
+        task.updated_at = utc_now()
+        await self.repository.add_event(
+            household_id=student.device.household_id,
+            task_id=task.id,
+            submission_id=submission.id,
+            actor_type="student_device",
+            actor_id=student.device.id,
+            event_type="homework.submission.created",
+            payload={"attemptNo": submission.attempt_no, "assetCount": len(assets)},
+        )
+        await self.audit.add(
+            household_id=student.device.household_id,
+            actor_type="student_device",
+            actor_id=student.device.id,
+            action="homework.submission.create",
+            resource_type="homework_submission",
+            resource_id=submission.id,
         )
         await self.session.flush()
         return submission
@@ -303,6 +386,12 @@ class HomeworkService:
     async def require_task(self, household_id: str, task_id: str) -> HomeworkTask:
         task = await self.repository.task(household_id, task_id)
         if task is None:
+            raise DomainError("task_not_found", "Homework task was not found", status_code=404)
+        return task
+
+    async def require_student_task(self, student: StudentPrincipal, task_id: str) -> HomeworkTask:
+        task = await self.repository.task(student.device.household_id, task_id)
+        if task is None or task.child_id != student.child.id:
             raise DomainError("task_not_found", "Homework task was not found", status_code=404)
         return task
 

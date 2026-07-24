@@ -7,8 +7,9 @@
 ## 1. 安全边界
 
 - 默认服务地址 `http://127.0.0.1:8790`，仅供本机开发。
-- 局域网接入真设备前必须增加 TLS；不得将当前明文 HTTP/WS 暴露到公网。
-- 家长会话使用 `Authorization: Bearer <token>`；节点首次配对后使用独立 device key。
+- 阶段 B 允许学生平板在同一可信家庭 Wi-Fi 内临时使用 HTTP；不得端口映射或暴露到公网，
+  远程访问前必须增加 TLS。
+- 家长会话使用 `Authorization: Bearer <token>`；房间节点和学生平板分别使用独立 device key。
 - password、session token、pairing code、device key 均不以明文存库；一次性值只在创建时返回。
 - 错误统一返回 `code`、`message`、`details`、`requestId`，不包含异常堆栈或凭据。
 
@@ -96,3 +97,32 @@
 图片不信任文件名和 MIME 声明，服务端实际解码后只接受 JPEG/PNG/WebP。限制为单张
 12 MiB、每次最多 6 张、家庭总配额 5 GiB。阶段 A 没有模型调用；成功提交后任务状态为
 `needs_parent_review`，家长接受后为 `completed`，要求重做后回到 `in_progress`。
+
+## 6. Android 学生端阶段 B
+
+学生设备与房间节点是两套权限。家长为一个 active child 创建短时一次性码，平板消费后获得
+只显示一次的学生 device key；后续请求使用 `Authorization: Student <device-key>`。配对码与
+device key 只存 SHA-256 hash，家长撤销设备后旧 key 立即返回 401。
+
+家长 API：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/v1/homework/student-pairing-codes` | `childId` 创建 8 位、短时一次性码 |
+| GET | `/api/v1/homework/student-devices` | 查看设备、绑定孩子、active 与最近连接时间 |
+| POST | `/api/v1/homework/student-devices/{id}/revoke` | 撤销设备；恢复必须重新配对 |
+
+学生设备 API：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/v1/student/pair` | 消费 `code`，提交 `name/platform`，换取一次性明文 key |
+| GET | `/api/v1/student/me` | 读取当前设备和绑定孩子 |
+| GET | `/api/v1/student/homework/tasks` | 只列出绑定孩子的任务 |
+| GET | `/api/v1/student/homework/tasks/{id}` | 读取自己的任务详情 |
+| POST | `/api/v1/student/homework/tasks/{id}/start` | `pending → in_progress` |
+| GET/POST | `/api/v1/student/homework/tasks/{id}/submissions` | 查询反馈或 multipart 提交图片 |
+
+学生任务响应不含 `referenceAnswer`、`rubric`；提交响应只给出 `assetCount`，不返回原图路径或
+下载 URL；审核只返回家长决定、摘要和质量等级，不返回内部结构化 items。任务查询和变更均以
+设备的 `household_id + child_id` 双重限定，对其他孩子的资源统一返回 404。

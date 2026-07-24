@@ -218,6 +218,7 @@ main：NasPhotoSource.configure(url/user/password/remoteDir)（仅建客户端�
 
 ```text
 家长 Web/App ── HTTP bearer ──▶ Home Agent Server
+学生 Android App ─ Student key ─▶        │
                                       │
                            SQLite/WAL + Alembic
                                       │
@@ -226,6 +227,7 @@ main：NasPhotoSource.configure(url/user/password/remoteDir)（仅建客户端�
 ```
 
 - `home_agent/src/home_agent/`：FastAPI API、认证、配对、repository、审计和在线节点 registry。
+- `student_app/`：独立 Flutter Android 客户端；设备固定绑定一个孩子，只消费最小权限作业 API。
 - `home_agent/src/linux_room_node/`：独立假节点进程；保存权限为 `0600` 的设备凭据，断线指数退避。
 - `packages/node_protocol/`：Dart 信封和能力模型；与 Python 读取同一份 canonical fixtures。
 - 数据库只保存密码的 Argon2id 哈希和 token/code/device key 的 SHA-256 哈希；明文凭据只返回一次。

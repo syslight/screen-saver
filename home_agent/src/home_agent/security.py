@@ -24,5 +24,10 @@ def random_credential(bytes_count: int = 32) -> str:
     return secrets.token_urlsafe(bytes_count)
 
 
+def random_human_code(length: int = 8) -> str:
+    alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
 def credential_hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()

@@ -26,7 +26,7 @@
     .error { color:var(--danger); white-space:pre-wrap; }
     .success { color:var(--brand); }
     .hidden { display:none !important; }
-    .member,.task,.submission { margin-top:10px; padding:13px; border:1px solid var(--line); border-radius:11px; background:#fff; }
+    .member,.device,.task,.submission { margin-top:10px; padding:13px; border:1px solid var(--line); border-radius:11px; background:#fff; }
     .task-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
     .badge { padding:3px 8px; border-radius:99px; color:#315348; background:#dfede6; font-size:12px; white-space:nowrap; }
     .images { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin-top:10px; }
@@ -72,6 +72,17 @@
         <div class="actions"><button>添加成员</button></div>
       </form>
       <div id="members"></div>
+    </section>
+
+    <section class="panel">
+      <h2>学生平板</h2>
+      <p class="muted">选择孩子生成一次性配对码。平板配对后固定为该孩子，换人前请先撤销设备。</p>
+      <form id="studentPairingForm" class="grid">
+        <label>绑定孩子<select name="childId" id="studentChildSelect" required></select></label>
+        <div class="actions"><button>生成配对码</button></div>
+      </form>
+      <div id="studentPairingResult" class="hidden member"></div>
+      <div id="studentDevices"></div>
     </section>
 
     <section class="panel">
@@ -160,7 +171,9 @@ async function loadMembers() {
   members = await request('/homework/members');
   $('#members').innerHTML = members.length ? members.map(m => `<div class="member"><b>${esc(m.displayName)}</b>　<span class="badge">${esc(m.role)}</span>　<span class="muted">${m.age == null ? '年龄未填' : esc(m.age)+' 岁'}${m.active?'':' · 已停用'}</span></div>`).join('') : '<p class="muted">还没有成员。</p>';
   const children = members.filter(m => m.role === 'child' && m.active);
-  $('#childSelect').innerHTML = children.map(m => `<option value="${esc(m.id)}">${esc(m.displayName)}${m.age == null?'':'（'+esc(m.age)+'岁）'}</option>`).join('');
+  const options = children.map(m => `<option value="${esc(m.id)}">${esc(m.displayName)}${m.age == null?'':'（'+esc(m.age)+'岁）'}</option>`).join('');
+  $('#childSelect').innerHTML = options;
+  $('#studentChildSelect').innerHTML = options;
 }
 
 $('#memberForm').addEventListener('submit', async event => {
@@ -168,6 +181,27 @@ $('#memberForm').addEventListener('submit', async event => {
   try { await request('/homework/members',{method:'POST',body:JSON.stringify(data)}); event.target.reset(); await loadMembers(); toast('成员已添加'); }
   catch(e) { toast(e.message,true); }
 });
+
+async function loadStudentDevices() {
+  const devices = await request('/homework/student-devices');
+  $('#studentDevices').innerHTML = devices.length ? devices.map(device => `<div class="device"><b>${esc(device.name)}</b>　<span class="badge">${esc(device.childName)}</span><div class="muted">${esc(device.platform)} · ${device.active ? '已启用' : '已撤销'}${device.lastSeenAt ? ' · 最近连接 '+esc(new Date(device.lastSeenAt).toLocaleString()) : ''}</div>${device.active ? `<div class="actions"><button class="danger" onclick="revokeStudentDevice('${device.id}')">撤销设备</button></div>` : ''}</div>`).join('') : '<p class="muted">还没有配对学生平板。</p>';
+}
+
+$('#studentPairingForm').addEventListener('submit', async event => {
+  event.preventDefault(); const data=formJson(event.target);
+  try {
+    const result=await request('/homework/student-pairing-codes',{method:'POST',body:JSON.stringify(data)});
+    const box=$('#studentPairingResult');
+    box.innerHTML=`<b>${esc(result.childName)}的配对码</b><p style="font-size:24px;letter-spacing:1px;word-break:break-all">${esc(result.code)}</p><p class="muted">有效期至 ${esc(new Date(result.expiresAt).toLocaleString())}，只能使用一次。请不要截图长期保存。</p>`;
+    box.classList.remove('hidden'); toast('配对码已生成');
+  } catch(e) { toast(e.message,true); }
+});
+
+async function revokeStudentDevice(id) {
+  if(!confirm('撤销后，这台平板需要重新配对才能使用。确定撤销吗？'))return;
+  try { await request(`/homework/student-devices/${id}/revoke`,{method:'POST'}); await loadStudentDevices(); toast('学生设备已撤销'); }
+  catch(e) { toast(e.message,true); }
+}
 
 $('#taskForm [name=taskDate]').value = new Date().toLocaleDateString('en-CA');
 $('#taskForm').addEventListener('submit', async event => {
@@ -236,7 +270,7 @@ async function review(event, submissionId) {
   catch(e) { toast(e.message,true); }
 }
 
-async function loadAll() { await loadMembers(); await loadTasks(); }
+async function loadAll() { await loadMembers(); await Promise.all([loadStudentDevices(),loadTasks()]); }
 $('#refresh').addEventListener('click', loadAll);
 (async()=>{ if(!token){showAuth();return;} try{showWorkspace();await loadAll();}catch(e){toast(e.message,true);} })();
 </script>

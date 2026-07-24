@@ -4,7 +4,7 @@
 
 本仓库也已开始承载独立的家庭 Agent 基础设施：`home_agent/` 是本地优先的 Python
 服务端和 Linux 房间节点，`packages/node_protocol/` 是未来 Linux/Android 节点共用的
-Dart 协议包。现有智能屏仍可独立运行，两套服务暂不互相依赖。
+Dart 协议包，`student_app/` 是独立的 Android 学生作业端。现有智能屏仍可独立运行。
 
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Platform](https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-blue)
@@ -43,10 +43,27 @@ uv run home-agent             # 默认 http://127.0.0.1:8790
 
 首次启动后通过 `/api/v1/bootstrap` 创建家庭和第一位家长，再由家长创建一次性节点配对码。
 完整 API 和节点消息见 [`docs/home-agent-protocol.md`](docs/home-agent-protocol.md)。当前仅提供
-本机 HTTP/WS 开发链路，局域网真设备接入前必须配置 TLS，不得暴露到公网。
+本机默认仍是 HTTP/WS 开发链路。阶段 B 允许学生平板在同一可信家庭 Wi-Fi 内临时使用 HTTP，
+但不得做端口映射或暴露到公网；远程访问前必须配置 HTTPS。
 
-家长作业中心位于 `http://127.0.0.1:8790/parent/`：可录入家庭成员、手动布置作业、上传
-纸质作业照片并人工确认完成质量。学生 Android App与模型自动检查将在后续阶段接入。
+家长作业中心位于 `http://127.0.0.1:8790/parent/`：可录入家庭成员、手动布置作业、管理
+学生平板、上传纸质作业照片并人工确认完成质量。学生 Android App 已支持绑定孩子、查看与
+开始任务、拍摄最多 6 页、提交和查看家长反馈；模型自动检查将在后续阶段接入。
+
+学生平板联调时让 Home Agent 监听局域网，并构建/安装独立 App：
+
+```bash
+cd home_agent
+HOME_AGENT_HOST=0.0.0.0 uv run home-agent
+
+cd ../student_app
+flutter pub get
+flutter build apk --debug
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+```
+
+在家长页面选择 10 岁孩子生成 8 位一次性配对码；平板填写服务器电脑的局域网地址，例如
+`192.168.1.10:8790`。配对后设备固定绑定该孩子，换人必须由家长撤销并重新配对。
 
 在 Windows / macOS 上同理（`flutter run -d windows` / `-d macos`，构建需对应系统）。
 Android 首次启动需输入同一局域网内的计算节点地址，详见
@@ -131,6 +148,7 @@ lib/
   ui/                         全屏仪表盘与各小组件
 web_console/index.html        手机控制台单页（原生 JS，打包进 assets）
 home_agent/                   家庭 Agent Server + Linux Room Node（独立 Python/uv 工程）
+student_app/                  独立 Android 学生端（配对、作业、相机提交、审核结果）
 packages/node_protocol/       Linux/Android 房间节点共享 Dart 协议模型
 ```
 

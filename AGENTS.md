@@ -8,7 +8,8 @@
 
 Monorepo 当前包含 Flutter 全屏智能屏，以及独立的家庭 Agent 基础设施。智能屏目标平台
 Windows / macOS / Linux / Android，包名 `smart_frame`，Flutter 3.44+（stable）；家庭 Agent
-使用 Python 3.12 + uv，通过版本化 HTTP/WebSocket 协议连接 Linux/Android 房间节点。
+使用 Python 3.12 + uv，通过版本化 HTTP/WebSocket 协议连接 Linux/Android 房间节点；
+`student_app/` 是独立的 Flutter Android 学生作业端。
 
 ## 构建与命令
 
@@ -21,6 +22,12 @@ flutter test
 flutter run -d linux
 flutter build linux|windows|macos --release   # 出包在 build/<平台>/.../release/ 下
 flutter build apk --release                   # Android arm64 展示端
+
+cd student_app
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug                     # 独立学生端 APK
 ```
 
 ### 代理坑
@@ -64,6 +71,7 @@ web_console/index.html        手机控制台单页（原生 JS，打包进 asse
 daemon/                       照片守护进程（Python 3.12 + uv，离线全量预处理 NAS 照片：dinov2/CLIP/insightface/VLM，写共享 SQLite；见 daemon/README.md）
 home_agent/                   家庭 Agent Server + Linux Room Node；独立 uv 环境、SQLite 和 Alembic 迁移
   src/home_agent/web/parent/  家长作业中心静态单页；认证、成员、任务、上传和人工审核
+student_app/                  独立 Flutter Android 学生端；设备配对、作业列表、拍照提交和审核结果
 packages/node_protocol/       节点协议 Dart 模型、共享 canonical fixtures 与合约测试
 deploy/                       systemd user unit（守护进程常驻）
 test/                         10 个 Dart 测试文件，见下方"测试地图"
@@ -76,7 +84,9 @@ NAS 图源引入新依赖 `webdav_client`（`pubspec.yaml`），桌面设置页�
 - **改代码后必须验证**：智能屏改动需 `flutter analyze` 无问题且 `flutter test` 全绿；
   `home_agent/` 改动还必须执行 `uv run ruff check .`、`uv run ruff format --check .`、
   `uv run mypy src`、`uv run pytest --cov=home_agent --cov=linux_room_node`；
-  `packages/node_protocol/` 改动执行 `dart analyze` 与 `dart test`。三个语言/包边界互不代替验收。
+  `student_app/` 改动执行其目录下的 `flutter analyze`、`flutter test`，涉及 Android 插件或
+  manifest 时还要构建 APK；`packages/node_protocol/` 改动执行 `dart analyze` 与 `dart test`。
+  各语言/包边界互不代替验收。
 - **指令统一入口**：现状——手机 WS 指令与语音意图统一经 `CommandService`（`lib/services/command_service.dart`）总线处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为直连服务的历史实现（`lib/ui/dashboard_page.dart`：←/→ 直连 `PhotoService`、空格直连 `VoicePipeline.triggerListen`，不经总线、不触发广播）。规范——新增指令应接入 `CommandService` 总线，不得绕过它直接操作服务，以便状态广播到全部手机端。
 - **改了就要同步文档**：
   - 目录结构 / 构建命令 → README.md（「运行与构建」「架构速览」）+ 本文件对应章节
@@ -86,6 +96,8 @@ NAS 图源引入新依赖 `webdav_client`（`pubspec.yaml`），桌面设置页�
 - **规格与计划**：规格文档落 `docs/superpowers/specs/`，计划落 `docs/superpowers/plans/`。
 - **家庭 Agent 协议**：以 `home_agent/src/home_agent/protocol/` 和共享 fixture 为准；改字段时同步
   `docs/home-agent-protocol.md`、Python 合约测试与 `packages/node_protocol/` Dart 合约测试。
+- **学生权限边界**：学生端必须使用独立 `Student` device key，不能保存或复用家长 bearer；
+  学生任务响应不得包含 `referenceAnswer`、`rubric` 或其他孩子信息。更换孩子必须撤销后重配。
 - 本项目是 git 仓库，托管在 GitHub 私有仓库 `screen-saver`；`git commit` / `push` 等变更操作必须先经用户确认，不要自动执行。
 - **提交规范**：获得用户确认后，commit 必须遵守 [docs/commit-convention.md](docs/commit-convention.md)：标题说明提交目的，正文必须写清“要做什么 / 做了什么 / 负面影响 / Review 重点 / 验证”。不得用 `update`、`fix bug` 等无法审计的模糊描述。
 

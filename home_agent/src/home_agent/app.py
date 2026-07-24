@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from home_agent.api import audit, auth, homework, households, nodes, websocket
+from home_agent.api import audit, auth, homework, households, nodes, student, websocket
 from home_agent.config import Settings
 from home_agent.db import create_engine, create_session_factory, upgrade_database
 from home_agent.errors import DomainError
@@ -53,6 +53,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.node_registry = NodeRegistry()
     app.state.login_limiter = InMemoryRateLimiter(limit=10)
     app.state.pairing_limiter = InMemoryRateLimiter(limit=20)
+    app.state.student_pairing_limiter = InMemoryRateLimiter(limit=20)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: object) -> object:
@@ -107,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(nodes.router)
     app.include_router(audit.router)
     app.include_router(homework.router)
+    app.include_router(student.router)
     app.include_router(websocket.router)
     return app
 

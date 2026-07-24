@@ -70,8 +70,8 @@ uv run home-agent
 ```
 
 默认数据目录为 `~/.local/share/family-home-agent`，默认只监听 `127.0.0.1:8790`。
-环境变量见 `home_agent/.env.example`。当前 HTTP/WS 只允许本机开发；真设备进入局域网前必须
-增加 TLS/反向代理，不能把 bearer token 或设备密钥通过明文网络传输。
+环境变量见 `home_agent/.env.example`。学生平板阶段 B 的可信家庭 Wi-Fi 原型可显式设置
+`HOME_AGENT_HOST=0.0.0.0`；不得做公网端口映射，远程访问前必须增加 TLS/反向代理。
 
 假节点获得家长端创建的一次性配对码后运行：
 
@@ -84,6 +84,22 @@ uv run fake-room-node --pairing-code '<一次性配对码>'
 
 家长作业中心随 Home Agent 一起启动，访问 `http://127.0.0.1:8790/parent/`。开发环境中的
 作业图片写入 `<data_dir>/homework/assets/`，测试使用临时目录，不会写入真实家庭数据。
+
+### 1.6 Android 学生端
+
+```bash
+cd student_app
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+```
+
+debug APK 位于 `student_app/build/app/outputs/flutter-apk/app-debug.apk`。可用
+`adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装。平板和服务器连接同一可信
+Wi-Fi 后，在家长作业中心生成 8 位一次性码，平板输入 `<服务器局域网 IP>:8790` 完成绑定。
+当前最低 Android 版本为 6.0（API 23），设备 key 由 `flutter_secure_storage` 存入 Android
+Keystore 支持的安全存储；manifest 禁用应用数据备份，避免 key 随备份迁移。
 
 ## 2. 日常命令
 
@@ -107,6 +123,11 @@ uv run pytest --cov=home_agent --cov=linux_room_node
 cd ../packages/node_protocol
 /home/peidong/flutter/bin/dart analyze
 /home/peidong/flutter/bin/dart test
+
+cd ../../student_app
+/home/peidong/flutter/bin/flutter analyze
+/home/peidong/flutter/bin/flutter test
+/home/peidong/flutter/bin/flutter build apk --debug
 ```
 
 Python 集成测试会在临时目录迁移数据库，并在 localhost 启动真实 Uvicorn + Fake Room Node，

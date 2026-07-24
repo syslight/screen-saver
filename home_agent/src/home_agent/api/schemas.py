@@ -207,3 +207,74 @@ class HomeworkEventResponse(ApiModel):
     event_type: str = Field(alias="eventType")
     payload: dict[str, Any]
     created_at: datetime = Field(alias="createdAt")
+
+
+class StudentPairingCodeRequest(ApiModel):
+    child_id: str = Field(alias="childId")
+
+
+class StudentPairingCodeResponse(ApiModel):
+    code: str
+    child_id: str = Field(alias="childId")
+    child_name: str = Field(alias="childName")
+    expires_at: datetime = Field(alias="expiresAt")
+
+
+class PairStudentDeviceRequest(ApiModel):
+    code: str = Field(min_length=1, max_length=256)
+    name: str = Field(min_length=1, max_length=120)
+    platform: str = Field(default="android", min_length=1, max_length=40)
+
+
+class PairStudentDeviceResponse(ApiModel):
+    device_id: str = Field(alias="deviceId")
+    device_key: str = Field(alias="deviceKey")
+    child_id: str = Field(alias="childId")
+    child_name: str = Field(alias="childName")
+
+
+class StudentDeviceResponse(ApiModel):
+    id: str
+    child_id: str = Field(alias="childId")
+    child_name: str = Field(alias="childName")
+    name: str
+    platform: str
+    active: bool
+    last_seen_at: datetime | None = Field(alias="lastSeenAt")
+    created_at: datetime = Field(alias="createdAt")
+
+
+class StudentMeResponse(ApiModel):
+    device_id: str = Field(alias="deviceId")
+    device_name: str = Field(alias="deviceName")
+    child_id: str = Field(alias="childId")
+    child_name: str = Field(alias="childName")
+
+
+class StudentHomeworkTaskResponse(ApiModel):
+    id: str
+    title: str
+    subject: str
+    task_date: date = Field(alias="taskDate")
+    due_at: datetime | None = Field(alias="dueAt")
+    instructions: str
+    status: str
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class StudentHomeworkReviewResponse(ApiModel):
+    decision: str
+    summary: str
+    quality_level: str = Field(alias="qualityLevel")
+    created_at: datetime = Field(alias="createdAt")
+
+
+class StudentHomeworkSubmissionResponse(ApiModel):
+    id: str
+    task_id: str = Field(alias="taskId")
+    attempt_no: int = Field(alias="attemptNo")
+    status: str
+    submitted_at: datetime = Field(alias="submittedAt")
+    asset_count: int = Field(alias="assetCount")
+    reviews: list[StudentHomeworkReviewResponse]
