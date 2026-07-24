@@ -45,6 +45,9 @@ uv run home-agent             # 默认 http://127.0.0.1:8790
 完整 API 和节点消息见 [`docs/home-agent-protocol.md`](docs/home-agent-protocol.md)。当前仅提供
 本机 HTTP/WS 开发链路，局域网真设备接入前必须配置 TLS，不得暴露到公网。
 
+家长作业中心位于 `http://127.0.0.1:8790/parent/`：可录入家庭成员、手动布置作业、上传
+纸质作业照片并人工确认完成质量。学生 Android App与模型自动检查将在后续阶段接入。
+
 在 Windows / macOS 上同理（`flutter run -d windows` / `-d macos`，构建需对应系统）。
 Android 首次启动需输入同一局域网内的计算节点地址，详见
 [`docs/display-node-deploy.md`](docs/display-node-deploy.md)。

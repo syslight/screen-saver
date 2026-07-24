@@ -63,6 +63,7 @@ lib/
 web_console/index.html        手机控制台单页（原生 JS，打包进 assets）
 daemon/                       照片守护进程（Python 3.12 + uv，离线全量预处理 NAS 照片：dinov2/CLIP/insightface/VLM，写共享 SQLite；见 daemon/README.md）
 home_agent/                   家庭 Agent Server + Linux Room Node；独立 uv 环境、SQLite 和 Alembic 迁移
+  src/home_agent/web/parent/  家长作业中心静态单页；认证、成员、任务、上传和人工审核
 packages/node_protocol/       节点协议 Dart 模型、共享 canonical fixtures 与合约测试
 deploy/                       systemd user unit（守护进程常驻）
 test/                         10 个 Dart 测试文件，见下方"测试地图"

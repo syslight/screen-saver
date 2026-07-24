@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -104,5 +104,106 @@ class AuditResponse(ApiModel):
     resource_type: str | None = Field(alias="resourceType")
     resource_id: str | None = Field(alias="resourceId")
     reason: str | None
+    payload: dict[str, Any]
+    created_at: datetime = Field(alias="createdAt")
+
+
+class MemberCreate(ApiModel):
+    display_name: str = Field(alias="displayName", min_length=1, max_length=80)
+    role: str
+    age: int | None = Field(default=None, ge=0, le=120)
+
+
+class MemberUpdate(ApiModel):
+    display_name: str | None = Field(default=None, alias="displayName", min_length=1, max_length=80)
+    age: int | None = Field(default=None, ge=0, le=120)
+    active: bool | None = None
+
+
+class MemberResponse(ApiModel):
+    id: str
+    display_name: str = Field(alias="displayName")
+    role: str
+    age: int | None
+    active: bool
+
+
+class HomeworkTaskCreate(ApiModel):
+    child_id: str = Field(alias="childId")
+    title: str = Field(min_length=1, max_length=160)
+    subject: str = Field(default="math", min_length=1, max_length=40)
+    task_date: date = Field(alias="taskDate")
+    due_at: datetime | None = Field(default=None, alias="dueAt")
+    instructions: str = Field(min_length=1, max_length=10_000)
+    reference_answer: str | None = Field(default=None, alias="referenceAnswer", max_length=20_000)
+    rubric: str | None = Field(default=None, max_length=10_000)
+
+
+class HomeworkTaskUpdate(ApiModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    subject: str | None = Field(default=None, min_length=1, max_length=40)
+    task_date: date | None = Field(default=None, alias="taskDate")
+    due_at: datetime | None = Field(default=None, alias="dueAt")
+    instructions: str | None = Field(default=None, min_length=1, max_length=10_000)
+    reference_answer: str | None = Field(default=None, alias="referenceAnswer", max_length=20_000)
+    rubric: str | None = Field(default=None, max_length=10_000)
+
+
+class HomeworkTaskResponse(ApiModel):
+    id: str
+    child_id: str = Field(alias="childId")
+    title: str
+    subject: str
+    task_date: date = Field(alias="taskDate")
+    due_at: datetime | None = Field(alias="dueAt")
+    instructions: str
+    reference_answer: str | None = Field(alias="referenceAnswer")
+    rubric: str | None
+    status: str
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+
+
+class HomeworkAssetResponse(ApiModel):
+    id: str
+    media_type: str = Field(alias="mediaType")
+    size_bytes: int = Field(alias="sizeBytes")
+    sha256: str
+    url: str
+
+
+class HomeworkReviewResponse(ApiModel):
+    id: str
+    decision: str
+    summary: str
+    quality_level: str = Field(alias="qualityLevel")
+    items: list[dict[str, Any]]
+    created_at: datetime = Field(alias="createdAt")
+
+
+class HomeworkSubmissionResponse(ApiModel):
+    id: str
+    task_id: str = Field(alias="taskId")
+    attempt_no: int = Field(alias="attemptNo")
+    status: str
+    submitted_at: datetime = Field(alias="submittedAt")
+    assets: list[HomeworkAssetResponse]
+    reviews: list[HomeworkReviewResponse]
+
+
+class HomeworkReviewRequest(ApiModel):
+    decision: str
+    summary: str = Field(min_length=1, max_length=10_000)
+    quality_level: str = Field(alias="qualityLevel")
+    items: list[dict[str, Any]] = Field(default_factory=list, max_length=200)
+
+
+class HomeworkEventResponse(ApiModel):
+    id: str
+    task_id: str = Field(alias="taskId")
+    submission_id: str | None = Field(alias="submissionId")
+    actor_type: str = Field(alias="actorType")
+    actor_id: str | None = Field(alias="actorId")
+    event_type: str = Field(alias="eventType")
     payload: dict[str, Any]
     created_at: datetime = Field(alias="createdAt")

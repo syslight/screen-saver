@@ -3,14 +3,15 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from home_agent.api import audit, auth, households, nodes, websocket
+from home_agent.api import audit, auth, homework, households, nodes, websocket
 from home_agent.config import Settings
 from home_agent.db import create_engine, create_session_factory, upgrade_database
 from home_agent.errors import DomainError
@@ -29,6 +30,9 @@ def _error_body(request: Request, code: str, message: str, details: object) -> d
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     configured = settings or Settings()
+    parent_html = (Path(__file__).resolve().parent / "web" / "parent" / "index.html").read_text(
+        encoding="utf-8"
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -94,10 +98,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=status, content={"status": "ready" if status == 200 else "starting"}
         )
 
+    @app.get("/parent/", response_class=HTMLResponse, include_in_schema=False)
+    async def parent_console() -> str:
+        return parent_html
+
     app.include_router(auth.router)
     app.include_router(households.router)
     app.include_router(nodes.router)
     app.include_router(audit.router)
+    app.include_router(homework.router)
     app.include_router(websocket.router)
     return app
 

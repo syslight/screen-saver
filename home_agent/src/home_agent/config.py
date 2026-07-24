@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     hello_timeout_seconds: float = Field(default=5.0, gt=0)
     command_timeout_seconds: float = Field(default=10.0, gt=0)
     heartbeat_timeout_seconds: float = Field(default=45.0, gt=1)
+    homework_max_file_bytes: int = Field(default=12 * 1024 * 1024, ge=1024)
+    homework_max_files_per_submission: int = Field(default=6, ge=1, le=20)
+    homework_quota_bytes: int = Field(default=5 * 1024 * 1024 * 1024, ge=1024)
 
     @property
     def database_url(self) -> str:

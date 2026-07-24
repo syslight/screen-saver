@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>家庭作业中心</title>
+  <style>
+    :root { --bg:#f4f1ea; --panel:#fffdf8; --ink:#28332f; --muted:#718078; --brand:#32745d; --danger:#b64a45; --line:#dedbd2; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:linear-gradient(135deg,#edf4ee,#f7f1e7); font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif; }
+    header { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; padding:16px max(18px,calc((100% - 1100px)/2)); color:#fff; background:#244f42; box-shadow:0 2px 12px #1b3b3126; }
+    header h1 { margin:0; font-size:20px; }
+    main { max-width:1100px; margin:22px auto; padding:0 16px 60px; }
+    .panel { margin-bottom:18px; padding:20px; background:var(--panel); border:1px solid #ffffff; border-radius:16px; box-shadow:0 8px 30px #25352f12; }
+    .panel h2 { margin:0 0 14px; font-size:18px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; }
+    label { display:block; color:var(--muted); font-size:13px; }
+    input,select,textarea { width:100%; margin-top:5px; padding:10px 11px; border:1px solid var(--line); border-radius:9px; background:#fff; color:var(--ink); font:inherit; }
+    textarea { min-height:82px; resize:vertical; }
+    button { padding:10px 16px; border:0; border-radius:9px; color:#fff; background:var(--brand); font:inherit; cursor:pointer; }
+    button.secondary { color:var(--ink); background:#e6ece7; }
+    button.danger { background:var(--danger); }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+    .muted { color:var(--muted); font-size:13px; }
+    .error { color:var(--danger); white-space:pre-wrap; }
+    .success { color:var(--brand); }
+    .hidden { display:none !important; }
+    .member,.task,.submission { margin-top:10px; padding:13px; border:1px solid var(--line); border-radius:11px; background:#fff; }
+    .task-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .badge { padding:3px 8px; border-radius:99px; color:#315348; background:#dfede6; font-size:12px; white-space:nowrap; }
+    .images { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin-top:10px; }
+    .images img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; background:#eee; }
+    #toast { position:fixed; right:16px; bottom:16px; max-width:360px; padding:12px 16px; border-radius:10px; color:#fff; background:#28332f; box-shadow:0 8px 28px #0003; }
+    @media (max-width:600px) { .panel { padding:15px; } header { padding:14px 16px; } }
+  </style>
+</head>
+<body>
+<header>
+  <h1>家庭作业中心</h1>
+  <button id="logout" class="secondary hidden" type="button">退出登录</button>
+</header>
+<main>
+  <section id="authPanel" class="panel">
+    <h2>家长登录</h2>
+    <form id="loginForm" class="grid">
+      <label>用户名<input name="username" autocomplete="username" required></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <div class="actions"><button>登录</button></div>
+    </form>
+    <details style="margin-top:18px">
+      <summary>第一次使用：初始化家庭</summary>
+      <form id="bootstrapForm" class="grid" style="margin-top:12px">
+        <label>家庭名称<input name="householdName" value="我的家庭" required></label>
+        <label>时区<input name="timezone" value="Asia/Shanghai" required></label>
+        <label>第一位家长用户名<input name="username" autocomplete="username" required></label>
+        <label>密码（至少 10 位）<input name="password" type="password" minlength="10" required></label>
+        <div class="actions"><button>初始化并登录</button></div>
+      </form>
+    </details>
+    <p id="authError" class="error"></p>
+  </section>
+
+  <div id="workspace" class="hidden">
+    <section class="panel">
+      <h2>家庭成员</h2>
+      <p class="muted">成员姓名仅用于家庭内展示；先录入 5 岁和 10 岁两个孩子。</p>
+      <form id="memberForm" class="grid">
+        <label>称呼<input name="displayName" placeholder="例如：大宝" required></label>
+        <label>角色<select name="role"><option value="child">孩子</option><option value="parent">家长</option><option value="elder">老人</option></select></label>
+        <label>年龄<input name="age" type="number" min="0" max="120"></label>
+        <div class="actions"><button>添加成员</button></div>
+      </form>
+      <div id="members"></div>
+    </section>
+
+    <section class="panel">
+      <h2>布置作业</h2>
+      <form id="taskForm">
+        <div class="grid">
+          <label>孩子<select name="childId" id="childSelect" required></select></label>
+          <label>标题<input name="title" placeholder="数学练习第 10 页 1—6 题" required></label>
+          <label>科目<input name="subject" value="math" required></label>
+          <label>日期<input name="taskDate" type="date" required></label>
+          <label>截止时间<input name="dueAt" type="datetime-local"></label>
+        </div>
+        <label style="margin-top:12px">任务说明<textarea name="instructions" required></textarea></label>
+        <div class="grid" style="margin-top:12px">
+          <label>参考答案（仅家长可见）<textarea name="referenceAnswer"></textarea></label>
+          <label>评分要求<textarea name="rubric"></textarea></label>
+        </div>
+        <div class="actions"><button>创建作业</button></div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <div class="task-head"><h2>作业任务</h2><button id="refresh" class="secondary" type="button">刷新</button></div>
+      <div id="tasks"></div>
+    </section>
+  </div>
+</main>
+<div id="toast" class="hidden"></div>
+<script>
+const api = '/api/v1';
+let token = sessionStorage.getItem('homeAgentParentToken') || '';
+let members = [];
+let taskCache = [];
+const $ = s => document.querySelector(s);
+const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const statusText = {pending:'待开始',in_progress:'进行中',needs_parent_review:'待家长审核',completed:'已完成',cancelled:'已取消'};
+
+function toast(message, error=false) {
+  const box = $('#toast'); box.textContent = message; box.style.background = error ? '#9b413d' : '#28332f'; box.classList.remove('hidden');
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => box.classList.add('hidden'), 3500);
+}
+
+async function request(path, options={}) {
+  const headers = new Headers(options.headers || {});
+  if (token) headers.set('Authorization', 'Bearer ' + token);
+  if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  const response = await fetch(api + path, {...options, headers});
+  if (response.status === 204) return null;
+  const type = response.headers.get('content-type') || '';
+  const data = type.includes('json') ? await response.json() : await response.text();
+  if (!response.ok) {
+    if (response.status === 401 && token) { token=''; sessionStorage.removeItem('homeAgentParentToken'); showAuth(); }
+    throw new Error(data.message || data.detail || `请求失败 (${response.status})`);
+  }
+  return data;
+}
+
+function formJson(form) {
+  const result = Object.fromEntries(new FormData(form).entries());
+  for (const key of Object.keys(result)) if (result[key] === '') delete result[key];
+  return result;
+}
+
+function showAuth() { $('#authPanel').classList.remove('hidden'); $('#workspace').classList.add('hidden'); $('#logout').classList.add('hidden'); }
+function showWorkspace() { $('#authPanel').classList.add('hidden'); $('#workspace').classList.remove('hidden'); $('#logout').classList.remove('hidden'); }
+
+async function login(username, password) {
+  const data = await request('/auth/login', {method:'POST', body:JSON.stringify({username,password})});
+  token = data.token; sessionStorage.setItem('homeAgentParentToken', token); showWorkspace(); await loadAll();
+}
+
+$('#loginForm').addEventListener('submit', async event => {
+  event.preventDefault(); const data=formJson(event.target); $('#authError').textContent='';
+  try { await login(data.username, data.password); } catch (e) { $('#authError').textContent=e.message; }
+});
+
+$('#bootstrapForm').addEventListener('submit', async event => {
+  event.preventDefault(); const data=formJson(event.target); $('#authError').textContent='';
+  try { await request('/bootstrap',{method:'POST',body:JSON.stringify(data)}); await login(data.username,data.password); }
+  catch(e) { $('#authError').textContent=e.message; }
+});
+
+$('#logout').addEventListener('click', async () => { try { await request('/auth/logout',{method:'POST'}); } catch (_) {} token=''; sessionStorage.removeItem('homeAgentParentToken'); showAuth(); });
+
+async function loadMembers() {
+  members = await request('/homework/members');
+  $('#members').innerHTML = members.length ? members.map(m => `<div class="member"><b>${esc(m.displayName)}</b>　<span class="badge">${esc(m.role)}</span>　<span class="muted">${m.age == null ? '年龄未填' : esc(m.age)+' 岁'}${m.active?'':' · 已停用'}</span></div>`).join('') : '<p class="muted">还没有成员。</p>';
+  const children = members.filter(m => m.role === 'child' && m.active);
+  $('#childSelect').innerHTML = children.map(m => `<option value="${esc(m.id)}">${esc(m.displayName)}${m.age == null?'':'（'+esc(m.age)+'岁）'}</option>`).join('');
+}
+
+$('#memberForm').addEventListener('submit', async event => {
+  event.preventDefault(); const data=formJson(event.target); if (data.age !== undefined) data.age=Number(data.age);
+  try { await request('/homework/members',{method:'POST',body:JSON.stringify(data)}); event.target.reset(); await loadMembers(); toast('成员已添加'); }
+  catch(e) { toast(e.message,true); }
+});
+
+$('#taskForm [name=taskDate]').value = new Date().toLocaleDateString('en-CA');
+$('#taskForm').addEventListener('submit', async event => {
+  event.preventDefault(); const data=formJson(event.target);
+  if (data.dueAt) data.dueAt = new Date(data.dueAt).toISOString();
+  try { await request('/homework/tasks',{method:'POST',body:JSON.stringify(data)}); event.target.reset(); $('#taskForm [name=taskDate]').value=new Date().toLocaleDateString('en-CA'); await loadTasks(); toast('作业已创建'); }
+  catch(e) { toast(e.message,true); }
+});
+
+async function loadTasks() {
+  const tasks = await request('/homework/tasks'); taskCache = tasks;
+  const target = $('#tasks');
+  target.innerHTML = tasks.length ? tasks.map(taskCard).join('') : '<p class="muted">还没有作业。</p>';
+}
+
+function taskCard(t) {
+  const child = members.find(m => m.id===t.childId);
+  const canSubmit = ['pending','in_progress'].includes(t.status);
+  return `<article class="task" data-task="${esc(t.id)}">
+    <div class="task-head"><div><b>${esc(t.title)}</b><div class="muted">${esc(child?.displayName||'未知孩子')} · ${esc(t.taskDate)} · ${esc(t.subject)}</div></div><span class="badge">${esc(statusText[t.status]||t.status)}</span></div>
+    <p>${esc(t.instructions)}</p>${t.referenceAnswer?`<details><summary>参考答案（家长）</summary><p>${esc(t.referenceAnswer)}</p></details>`:''}
+    <div class="actions">
+      ${t.status==='pending'?`<button onclick="taskAction('${t.id}','start')">开始</button>`:''}
+      ${canSubmit?`<button class="secondary" onclick="editTask('${t.id}')">修改</button>`:''}
+      ${canSubmit?`<button class="secondary" onclick="chooseFiles('${t.id}')">上传作业照片</button><input class="hidden" id="files-${t.id}" type="file" accept="image/jpeg,image/png,image/webp" multiple onchange="uploadFiles('${t.id}',this)">`:''}
+      ${!['completed','cancelled'].includes(t.status)?`<button class="danger" onclick="taskAction('${t.id}','cancel')">取消</button>`:''}
+      <button class="secondary" onclick="loadSubmissions('${t.id}')">查看提交</button>
+    </div><div id="submissions-${t.id}"></div></article>`;
+}
+
+async function taskAction(id, action) { try { await request(`/homework/tasks/${id}/${action}`,{method:'POST'}); await loadTasks(); toast('状态已更新'); } catch(e) { toast(e.message,true); } }
+async function editTask(id) {
+  const oldTitle=taskCache.find(task=>task.id===id)?.title||'';
+  const title=prompt('修改作业标题',oldTitle); if(title===null||!title.trim())return;
+  try { await request(`/homework/tasks/${id}`,{method:'PATCH',body:JSON.stringify({title:title.trim()})}); await loadTasks(); toast('作业已修改'); }
+  catch(e) { toast(e.message,true); }
+}
+function chooseFiles(id) { document.getElementById('files-'+id).click(); }
+async function uploadFiles(id, input) {
+  const files=[...input.files]; if (!files.length) return; if(files.length>6){toast('每次最多 6 张',true);return;}
+  const body=new FormData(); files.forEach(file=>body.append('files',file));
+  try { await request(`/homework/tasks/${id}/submissions`,{method:'POST',body}); await loadTasks(); toast('照片已保存，等待家长审核'); }
+  catch(e) { toast(e.message,true); } finally { input.value=''; }
+}
+
+async function protectedImage(img, url) {
+  const response=await fetch(url,{headers:{Authorization:'Bearer '+token}}); if(!response.ok)return;
+  img.src=URL.createObjectURL(await response.blob());
+}
+
+async function loadSubmissions(taskId) {
+  try {
+    const submissions=await request(`/homework/tasks/${taskId}/submissions`);
+    const box=document.getElementById('submissions-'+taskId);
+    box.innerHTML=submissions.length?submissions.map(s=>`<div class="submission"><b>第 ${s.attemptNo} 次提交</b>　<span class="badge">${esc(s.status)}</span>
+      <div class="images">${s.assets.map(a=>`<img data-protected="${esc(a.url)}" alt="作业图片">`).join('')}</div>
+      ${s.status==='needs_parent_review'?`<form onsubmit="review(event,'${s.id}')"><label>审核意见<textarea name="summary" required placeholder="完成质量、需要改进的部分"></textarea></label><label>完成质量<select name="qualityLevel"><option value="excellent">优秀</option><option value="good">良好</option><option value="needs_revision">需要修改</option><option value="unknown">无法判断</option></select></label><div class="actions"><button name="decision" value="accept">确认完成</button><button class="danger" name="decision" value="retry">要求重做</button></div></form>`:''}
+      ${s.reviews.map(r=>`<p><b>审核：</b>${esc(r.summary)}（${esc(r.qualityLevel)}）</p>`).join('')}</div>`).join(''):'<p class="muted">暂无提交。</p>';
+    box.querySelectorAll('img[data-protected]').forEach(img=>protectedImage(img,img.dataset.protected));
+  } catch(e) { toast(e.message,true); }
+}
+
+async function review(event, submissionId) {
+  event.preventDefault(); const data=formJson(event.target); data.decision=event.submitter.value; data.items=[];
+  try { await request(`/homework/submissions/${submissionId}/review`,{method:'POST',body:JSON.stringify(data)}); await loadTasks(); toast(data.decision==='accept'?'已确认完成':'已要求重做'); }
+  catch(e) { toast(e.message,true); }
+}
+
+async function loadAll() { await loadMembers(); await loadTasks(); }
+$('#refresh').addEventListener('click', loadAll);
+(async()=>{ if(!token){showAuth();return;} try{showWorkspace();await loadAll();}catch(e){toast(e.message,true);} })();
+</script>
+</body>
+</html>

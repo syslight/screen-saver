@@ -1,10 +1,20 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -121,5 +131,103 @@ class AuditEvent(Base):
     resource_type: Mapped[str | None] = mapped_column(String(40))
     resource_id: Mapped[str | None] = mapped_column(String(36))
     reason: Mapped[str | None] = mapped_column(String(240))
+    payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class HouseholdMember(Base):
+    __tablename__ = "household_members"
+    __table_args__ = (UniqueConstraint("household_id", "display_name"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    display_name: Mapped[str] = mapped_column(String(80))
+    role: Mapped[str] = mapped_column(String(20))
+    age: Mapped[int | None] = mapped_column(Integer)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class HomeworkTask(Base):
+    __tablename__ = "homework_tasks"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    child_id: Mapped[str] = mapped_column(ForeignKey("household_members.id"))
+    title: Mapped[str] = mapped_column(String(160))
+    subject: Mapped[str] = mapped_column(String(40), default="math")
+    task_date: Mapped[date] = mapped_column(Date)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    instructions: Mapped[str] = mapped_column(Text)
+    reference_answer: Mapped[str | None] = mapped_column(Text)
+    rubric: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class HomeworkSubmission(Base):
+    __tablename__ = "homework_submissions"
+    __table_args__ = (UniqueConstraint("task_id", "attempt_no"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    task_id: Mapped[str] = mapped_column(ForeignKey("homework_tasks.id", ondelete="CASCADE"))
+    attempt_no: Mapped[int] = mapped_column(Integer)
+    submitted_by: Mapped[str] = mapped_column(String(36))
+    status: Mapped[str] = mapped_column(String(32), default="needs_parent_review")
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class SubmissionAsset(Base):
+    __tablename__ = "submission_assets"
+    __table_args__ = (UniqueConstraint("submission_id", "local_path"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    submission_id: Mapped[str] = mapped_column(
+        ForeignKey("homework_submissions.id", ondelete="CASCADE")
+    )
+    media_type: Mapped[str] = mapped_column(String(40))
+    local_path: Mapped[str] = mapped_column(Text)
+    sha256: Mapped[str] = mapped_column(String(64))
+    size_bytes: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class HomeworkReview(Base):
+    __tablename__ = "homework_reviews"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    submission_id: Mapped[str] = mapped_column(
+        ForeignKey("homework_submissions.id", ondelete="CASCADE")
+    )
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    decision: Mapped[str] = mapped_column(String(20))
+    summary: Mapped[str] = mapped_column(Text)
+    quality_level: Mapped[str] = mapped_column(String(24))
+    items_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class HomeworkEvent(Base):
+    __tablename__ = "homework_events"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    household_id: Mapped[str] = mapped_column(
+        ForeignKey("households.id", ondelete="CASCADE"), index=True
+    )
+    task_id: Mapped[str] = mapped_column(
+        ForeignKey("homework_tasks.id", ondelete="CASCADE"), index=True
+    )
+    submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("homework_submissions.id", ondelete="CASCADE")
+    )
+    actor_type: Mapped[str] = mapped_column(String(24))
+    actor_id: Mapped[str | None] = mapped_column(String(36))
+    event_type: Mapped[str] = mapped_column(String(80), index=True)
     payload_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

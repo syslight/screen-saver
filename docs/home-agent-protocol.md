@@ -74,3 +74,25 @@
 
 阶段 1 不定义音视频二进制帧和媒体上传。假节点声明 camera、microphone_array、speaker，
 实现 `fake.echo` 与 `fake.set_status`，不访问真实硬件。
+
+## 5. 家庭作业阶段 A
+
+家长页面由 `GET /parent/` 提供，token 只保存在浏览器 `sessionStorage`。以下 API 均要求
+家长 bearer session：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET/POST | `/api/v1/homework/members` | 查询/创建家庭成员 |
+| PATCH | `/api/v1/homework/members/{id}` | 修改成员 |
+| GET/POST | `/api/v1/homework/tasks` | 查询/创建作业 |
+| GET/PATCH | `/api/v1/homework/tasks/{id}` | 查看/修改作业 |
+| POST | `/api/v1/homework/tasks/{id}/start` | 开始作业 |
+| POST | `/api/v1/homework/tasks/{id}/cancel` | 取消作业 |
+| GET/POST | `/api/v1/homework/tasks/{id}/submissions` | 查询提交或 multipart 上传图片 |
+| GET | `/api/v1/homework/assets/{id}` | 鉴权下载原图 |
+| POST | `/api/v1/homework/submissions/{id}/review` | 家长 `accept`/`retry` |
+| GET | `/api/v1/homework/events?taskId=` | 查询不可变业务事件 |
+
+图片不信任文件名和 MIME 声明，服务端实际解码后只接受 JPEG/PNG/WebP。限制为单张
+12 MiB、每次最多 6 张、家庭总配额 5 GiB。阶段 A 没有模型调用；成功提交后任务状态为
+`needs_parent_review`，家长接受后为 `completed`，要求重做后回到 `in_progress`。

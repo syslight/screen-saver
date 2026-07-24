@@ -82,6 +82,9 @@ uv run fake-room-node --pairing-code '<一次性配对码>'
 
 终端只显示凭据文件路径，不打印设备密钥；下次启动省略 `--pairing-code` 即可复用设备凭据。
 
+家长作业中心随 Home Agent 一起启动，访问 `http://127.0.0.1:8790/parent/`。开发环境中的
+作业图片写入 `<data_dir>/homework/assets/`，测试使用临时目录，不会写入真实家庭数据。
+
 ## 2. 日常命令
 
 ```bash
