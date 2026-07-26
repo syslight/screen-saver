@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import SecretStr
+
 from home_agent.config import Settings
 from home_agent.security import credential_hash, hash_password, random_credential, verify_password
 from linux_room_node.config import NodeCredentials
@@ -23,6 +25,16 @@ def test_database_override_is_secret(tmp_path: Path) -> None:
     settings = Settings(database_url_override=url)
     assert settings.database_url == url
     assert url not in repr(settings)
+
+
+def test_homework_model_defaults_and_api_key_are_private() -> None:
+    settings = Settings(homework_model_api_key=SecretStr("private-model-key"))
+    assert settings.homework_model_enabled is False
+    assert settings.homework_model_base_url == "https://api.moonshot.ai/v1"
+    assert settings.homework_model_name == "kimi-k3"
+    assert settings.homework_model_api_key is not None
+    assert settings.homework_model_api_key.get_secret_value() == "private-model-key"
+    assert "private-model-key" not in repr(settings)
 
 
 def test_password_and_credential_hashes_do_not_retain_plaintext() -> None:

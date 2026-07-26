@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from home_agent.domain.models import (
     HomeworkEvent,
+    HomeworkInspection,
     HomeworkReview,
     HomeworkSubmission,
     HomeworkTask,
@@ -129,6 +130,17 @@ class HomeworkRepository:
                 HomeworkReview.submission_id == submission_id,
             )
             .order_by(HomeworkReview.created_at)
+        )
+        return list(result)
+
+    async def inspections(self, household_id: str, submission_id: str) -> list[HomeworkInspection]:
+        result = await self.session.scalars(
+            select(HomeworkInspection)
+            .where(
+                HomeworkInspection.household_id == household_id,
+                HomeworkInspection.submission_id == submission_id,
+            )
+            .order_by(HomeworkInspection.created_at.desc())
         )
         return list(result)
 

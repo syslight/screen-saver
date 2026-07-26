@@ -126,3 +126,23 @@ device key 只存 SHA-256 hash，家长撤销设备后旧 key 立即返回 401�
 学生任务响应不含 `referenceAnswer`、`rubric`；提交响应只给出 `assetCount`，不返回原图路径或
 下载 URL；审核只返回家长决定、摘要和质量等级，不返回内部结构化 items。任务查询和变更均以
 设备的 `household_id + child_id` 双重限定，对其他孩子的资源统一返回 404。
+
+## 7. 作业 Agent 检查阶段 C
+
+视觉模型默认关闭，并且不会在学生提交后自动运行。以下 API 只接受家长 bearer session：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| GET | `/api/v1/homework/model-status` | 返回 `enabled/configured/baseUrlHost/modelName`，不返回 key |
+| POST | `/api/v1/homework/submissions/{id}/inspect` | 家长明确授权并同步执行一次检查 |
+| GET | `/api/v1/homework/submissions/{id}/inspections` | 按时间倒序返回不可覆盖的检查记录 |
+
+`inspect` 将本地纠正方向、最长边缩至 2400 像素并转为 JPEG 的图片，以及任务要求、参考答案和
+评分标准发送到配置的 OpenAI-compatible `/chat/completions`。默认模型名 `kimi-k3` 是 Kimi 的
+具体模型，不是供应商名称；切换 GLM 时只替换 base URL、key 和支持视觉输入的具体模型名。
+
+检查记录状态为 `running/completed/needs_parent_review/failed`，与作业任务/提交状态分离。返回
+字段包含 `imageQuality`、`summary`、`confidence`、`suggestedDecision` 以及分项
+`location/issue/hint/similarExample/steps/confidence`。图片不清或不全、总置信度低于 0.75、任一
+分项低于 0.65，或模型建议 `review` 时，检查记录标为 `needs_parent_review`。模型建议不会自动
+调用家长的 `accept/retry`；失败只保存归一化 `errorCode`，不保存或返回供应商原始响应。

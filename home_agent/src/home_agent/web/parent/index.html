@@ -26,7 +26,9 @@
     .error { color:var(--danger); white-space:pre-wrap; }
     .success { color:var(--brand); }
     .hidden { display:none !important; }
-    .member,.device,.task,.submission { margin-top:10px; padding:13px; border:1px solid var(--line); border-radius:11px; background:#fff; }
+    .member,.device,.task,.submission,.inspection { margin-top:10px; padding:13px; border:1px solid var(--line); border-radius:11px; background:#fff; }
+    .inspection { background:#f3f8f5; }
+    .inspection-item { margin-top:9px; padding:10px; border-left:3px solid #8bb4a3; background:#fff; }
     .task-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
     .badge { padding:3px 8px; border-radius:99px; color:#315348; background:#dfede6; font-size:12px; white-space:nowrap; }
     .images { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin-top:10px; }
@@ -106,6 +108,7 @@
 
     <section class="panel">
       <div class="task-head"><h2>作业任务</h2><button id="refresh" class="secondary" type="button">刷新</button></div>
+      <p id="modelStatus" class="muted">正在读取 Agent 检查配置……</p>
       <div id="tasks"></div>
     </section>
   </div>
@@ -116,9 +119,11 @@ const api = '/api/v1';
 let token = sessionStorage.getItem('homeAgentParentToken') || '';
 let members = [];
 let taskCache = [];
+let modelStatus = {enabled:false,configured:false,modelName:'kimi-k3',baseUrlHost:null};
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 const statusText = {pending:'待开始',in_progress:'进行中',needs_parent_review:'待家长审核',completed:'已完成',cancelled:'已取消'};
+const inspectionStatusText = {running:'检查中',completed:'检查完成',needs_parent_review:'需要家长重点复核',failed:'检查失败'};
 
 function toast(message, error=false) {
   const box = $('#toast'); box.textContent = message; box.style.background = error ? '#9b413d' : '#28332f'; box.classList.remove('hidden');
@@ -217,6 +222,16 @@ async function loadTasks() {
   target.innerHTML = tasks.length ? tasks.map(taskCard).join('') : '<p class="muted">还没有作业。</p>';
 }
 
+async function loadModelStatus() {
+  modelStatus = await request('/homework/model-status');
+  const text = modelStatus.configured
+    ? `Agent 图片检查已就绪：${modelStatus.modelName}（${modelStatus.baseUrlHost}）。每次检查都需要家长明确确认后才会发送图片。`
+    : modelStatus.enabled
+      ? 'Agent 图片检查已启用，但模型地址、模型名或 API Key 尚未配置完整。'
+      : 'Agent 图片检查默认关闭；配置服务器环境变量并启用后，家长可逐次授权发送作业图片。';
+  $('#modelStatus').textContent = text;
+}
+
 function taskCard(t) {
   const child = members.find(m => m.id===t.childId);
   const canSubmit = ['pending','in_progress'].includes(t.status);
@@ -255,13 +270,32 @@ async function protectedImage(img, url) {
 async function loadSubmissions(taskId) {
   try {
     const submissions=await request(`/homework/tasks/${taskId}/submissions`);
+    await Promise.all(submissions.map(async submission => {
+      submission.inspections=await request(`/homework/submissions/${submission.id}/inspections`);
+    }));
     const box=document.getElementById('submissions-'+taskId);
     box.innerHTML=submissions.length?submissions.map(s=>`<div class="submission"><b>第 ${s.attemptNo} 次提交</b>　<span class="badge">${esc(s.status)}</span>
       <div class="images">${s.assets.map(a=>`<img data-protected="${esc(a.url)}" alt="作业图片">`).join('')}</div>
+      ${s.status==='needs_parent_review'&&modelStatus.configured?`<div class="actions"><button class="secondary" onclick="inspectSubmission('${s.id}','${taskId}',this)">授权 Agent 检查这些图片</button></div><p class="muted">点击后，本次提交的图片、作业要求、参考答案和评分标准会发送给 ${esc(modelStatus.modelName)}；结果仅供家长复核。</p>`:''}
+      ${s.inspections.map(inspectionCard).join('')}
       ${s.status==='needs_parent_review'?`<form onsubmit="review(event,'${s.id}')"><label>审核意见<textarea name="summary" required placeholder="完成质量、需要改进的部分"></textarea></label><label>完成质量<select name="qualityLevel"><option value="excellent">优秀</option><option value="good">良好</option><option value="needs_revision">需要修改</option><option value="unknown">无法判断</option></select></label><div class="actions"><button name="decision" value="accept">确认完成</button><button class="danger" name="decision" value="retry">要求重做</button></div></form>`:''}
       ${s.reviews.map(r=>`<p><b>审核：</b>${esc(r.summary)}（${esc(r.qualityLevel)}）</p>`).join('')}</div>`).join(''):'<p class="muted">暂无提交。</p>';
     box.querySelectorAll('img[data-protected]').forEach(img=>protectedImage(img,img.dataset.protected));
   } catch(e) { toast(e.message,true); }
+}
+
+function inspectionCard(result) {
+  const confidence=result.confidence==null?'—':Math.round(result.confidence*100)+'%';
+  const items=(result.items||[]).map(item=>`<div class="inspection-item"><b>${esc(item.location)}</b><p>${esc(item.issue)}</p><p><b>提示：</b>${esc(item.hint)}</p><p><b>类似例子：</b>${esc(item.similarExample)}</p><ol>${item.steps.map(step=>`<li>${esc(step)}</li>`).join('')}</ol><span class="muted">该项置信度 ${Math.round(item.confidence*100)}%</span></div>`).join('');
+  if(result.status==='failed') return `<div class="inspection"><b>Agent 检查失败</b><p class="error">错误代码：${esc(result.errorCode||'model_provider_error')}</p><p class="muted">图片仍保存在本机，作业状态未改变；可稍后重试或直接人工审核。</p></div>`;
+  return `<div class="inspection"><div class="task-head"><b>Agent 检查建议</b><span class="badge">${esc(inspectionStatusText[result.status]||result.status)}</span></div><p>${esc(result.summary||'正在检查……')}</p><p class="muted">模型 ${esc(result.modelName)} · 图片质量 ${esc(result.imageQuality||'—')} · 总置信度 ${esc(confidence)} · 建议 ${esc(result.suggestedDecision||'—')}</p>${items||'<p class="muted">未指出明确问题，仍需家长查看原图后决定。</p>'}<p class="muted">Agent 建议不会自动确认完成，也不会向孩子显示完整答案。</p></div>`;
+}
+
+async function inspectSubmission(submissionId, taskId, button) {
+  if(!confirm(`本次会把作业图片、作业要求、参考答案和评分标准发送给 ${modelStatus.modelName} 进行检查。是否授权这一次发送？`))return;
+  button.disabled=true; button.textContent='Agent 检查中……';
+  try { const result=await request(`/homework/submissions/${submissionId}/inspect`,{method:'POST'}); await loadSubmissions(taskId); toast(result.status==='failed'?'Agent 检查失败，可稍后重试':'Agent 检查建议已返回',result.status==='failed'); }
+  catch(e) { button.disabled=false; button.textContent='授权 Agent 检查这些图片'; toast(e.message,true); }
 }
 
 async function review(event, submissionId) {
@@ -270,7 +304,7 @@ async function review(event, submissionId) {
   catch(e) { toast(e.message,true); }
 }
 
-async function loadAll() { await loadMembers(); await Promise.all([loadStudentDevices(),loadTasks()]); }
+async function loadAll() { await loadMembers(); await Promise.all([loadStudentDevices(),loadModelStatus(),loadTasks()]); }
 $('#refresh').addEventListener('click', loadAll);
 (async()=>{ if(!token){showAuth();return;} try{showWorkspace();await loadAll();}catch(e){toast(e.message,true);} })();
 </script>

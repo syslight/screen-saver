@@ -11,6 +11,9 @@ from home_agent.api.dependencies import get_parent, get_session
 from home_agent.api.schemas import (
     HomeworkAssetResponse,
     HomeworkEventResponse,
+    HomeworkInspectionItemResponse,
+    HomeworkInspectionResponse,
+    HomeworkModelStatusResponse,
     HomeworkReviewRequest,
     HomeworkReviewResponse,
     HomeworkSubmissionResponse,
@@ -22,6 +25,7 @@ from home_agent.api.schemas import (
     MemberUpdate,
 )
 from home_agent.domain.models import (
+    HomeworkInspection,
     HomeworkReview,
     HomeworkSubmission,
     HomeworkTask,
@@ -34,6 +38,11 @@ from home_agent.repositories.homework import HomeworkRepository
 from home_agent.services.auth import AuthService
 from home_agent.services.homework import TASK_STATUSES, HomeworkService
 from home_agent.services.homework_assets import HomeworkAssetService
+from home_agent.services.homework_inspection import HomeworkInspectionService
+from home_agent.services.homework_inspector import (
+    InspectionProviderError,
+    OpenAICompatibleHomeworkInspector,
+)
 
 router = APIRouter(prefix="/api/v1/homework", tags=["homework"])
 
@@ -91,6 +100,26 @@ def _review_response(review: HomeworkReview) -> HomeworkReviewResponse:
         quality_level=review.quality_level,
         items=review.items_json,
         created_at=review.created_at,
+    )
+
+
+def _inspection_response(inspection: HomeworkInspection) -> HomeworkInspectionResponse:
+    return HomeworkInspectionResponse(
+        id=inspection.id,
+        submission_id=inspection.submission_id,
+        status=inspection.status,
+        model_name=inspection.model_name,
+        prompt_version=inspection.prompt_version,
+        image_quality=inspection.image_quality,
+        summary=inspection.summary,
+        confidence=inspection.confidence,
+        suggested_decision=inspection.suggested_decision,
+        items=[
+            HomeworkInspectionItemResponse.model_validate(item) for item in inspection.items_json
+        ],
+        error_code=inspection.error_code,
+        created_at=inspection.created_at,
+        completed_at=inspection.completed_at,
     )
 
 
@@ -357,6 +386,71 @@ async def review_submission(
     )
     await session.commit()
     return _review_response(review)
+
+
+@router.get("/model-status", response_model=HomeworkModelStatusResponse)
+async def homework_model_status(
+    request: Request,
+    parent: AuthenticatedParent = Depends(get_parent),
+    session: AsyncSession = Depends(get_session),
+) -> HomeworkModelStatusResponse:
+    await _current_parent(session, request, parent)
+    inspector = OpenAICompatibleHomeworkInspector(request.app.state.settings)
+    return HomeworkModelStatusResponse(
+        enabled=request.app.state.settings.homework_model_enabled,
+        configured=inspector.configured,
+        base_url_host=inspector.base_url_host,
+        model_name=request.app.state.settings.homework_model_name,
+    )
+
+
+@router.post(
+    "/submissions/{submission_id}/inspect",
+    response_model=HomeworkInspectionResponse,
+    status_code=201,
+)
+async def inspect_submission(
+    submission_id: str,
+    request: Request,
+    parent: AuthenticatedParent = Depends(get_parent),
+    session: AsyncSession = Depends(get_session),
+) -> HomeworkInspectionResponse:
+    current = await _current_parent(session, request, parent)
+    service = HomeworkInspectionService(session, request.app.state.settings)
+    inspection, task, assets = await service.start(current, submission_id)
+    await session.commit()
+
+    try:
+        result = await request.app.state.homework_inspector.inspect(
+            task,
+            assets,
+            HomeworkAssetService(request.app.state.settings),
+        )
+    except InspectionProviderError as exc:
+        await service.fail(current, task, inspection, exc.code)
+    except Exception:
+        await service.fail(current, task, inspection, "model_provider_error")
+    else:
+        await service.complete(current, task, inspection, result)
+    await session.commit()
+    return _inspection_response(inspection)
+
+
+@router.get(
+    "/submissions/{submission_id}/inspections",
+    response_model=list[HomeworkInspectionResponse],
+)
+async def list_inspections(
+    submission_id: str,
+    request: Request,
+    parent: AuthenticatedParent = Depends(get_parent),
+    session: AsyncSession = Depends(get_session),
+) -> list[HomeworkInspectionResponse]:
+    current = await _current_parent(session, request, parent)
+    service = HomeworkInspectionService(session, request.app.state.settings)
+    await service.require_submission(current.user.household_id, submission_id)
+    inspections = await service.repository.inspections(current.user.household_id, submission_id)
+    return [_inspection_response(item) for item in inspections]
 
 
 @router.get("/events", response_model=list[HomeworkEventResponse])

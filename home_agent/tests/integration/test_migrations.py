@@ -37,6 +37,7 @@ def test_foundation_migration_upgrades_and_downgrades(tmp_path: Path) -> None:
         "homework_events",
         "student_pairing_codes",
         "student_devices",
+        "homework_inspections",
     } <= tables
     command.downgrade(config, "base")
     with sqlite3.connect(database) as connection:

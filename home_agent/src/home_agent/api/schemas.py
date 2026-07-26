@@ -278,3 +278,35 @@ class StudentHomeworkSubmissionResponse(ApiModel):
     submitted_at: datetime = Field(alias="submittedAt")
     asset_count: int = Field(alias="assetCount")
     reviews: list[StudentHomeworkReviewResponse]
+
+
+class HomeworkModelStatusResponse(ApiModel):
+    enabled: bool
+    configured: bool
+    base_url_host: str | None = Field(alias="baseUrlHost")
+    model_name: str = Field(alias="modelName")
+
+
+class HomeworkInspectionItemResponse(ApiModel):
+    location: str
+    issue: str
+    hint: str
+    similar_example: str = Field(alias="similarExample")
+    steps: list[str]
+    confidence: float
+
+
+class HomeworkInspectionResponse(ApiModel):
+    id: str
+    submission_id: str = Field(alias="submissionId")
+    status: str
+    model_name: str = Field(alias="modelName")
+    prompt_version: str = Field(alias="promptVersion")
+    image_quality: str | None = Field(alias="imageQuality")
+    summary: str | None
+    confidence: float | None
+    suggested_decision: str | None = Field(alias="suggestedDecision")
+    items: list[HomeworkInspectionItemResponse]
+    error_code: str | None = Field(alias="errorCode")
+    created_at: datetime = Field(alias="createdAt")
+    completed_at: datetime | None = Field(alias="completedAt")

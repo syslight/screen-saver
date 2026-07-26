@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     homework_max_file_bytes: int = Field(default=12 * 1024 * 1024, ge=1024)
     homework_max_files_per_submission: int = Field(default=6, ge=1, le=20)
     homework_quota_bytes: int = Field(default=5 * 1024 * 1024 * 1024, ge=1024)
+    homework_model_enabled: bool = False
+    homework_model_base_url: str = "https://api.moonshot.ai/v1"
+    homework_model_api_key: SecretStr | None = Field(default=None, repr=False)
+    homework_model_name: str = "kimi-k3"
+    homework_model_timeout_seconds: float = Field(default=90.0, gt=0, le=600)
 
     @property
     def database_url(self) -> str:

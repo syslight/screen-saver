@@ -85,6 +85,12 @@ uv run fake-room-node --pairing-code '<一次性配对码>'
 家长作业中心随 Home Agent 一起启动，访问 `http://127.0.0.1:8790/parent/`。开发环境中的
 作业图片写入 `<data_dir>/homework/assets/`，测试使用临时目录，不会写入真实家庭数据。
 
+可选的作业视觉检查默认关闭。启用 Kimi K3 时设置
+`HOME_AGENT_HOMEWORK_MODEL_ENABLED=true`、`HOME_AGENT_HOMEWORK_MODEL_API_KEY`，默认
+base URL 和模型名分别为 `https://api.moonshot.ai/v1`、`kimi-k3`。切换 GLM 时改为
+`https://open.bigmodel.cn/api/paas/v4` 和支持图片输入的具体模型名。真实发送只由家长页面逐次
+确认触发；不要把 `.env` 或密钥提交到仓库。
+
 ### 1.6 Android 学生端
 
 ```bash

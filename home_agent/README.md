@@ -1,7 +1,7 @@
 # Family Home Agent
 
 家庭 Agent 的本地优先服务端与 Linux 房间节点基础。当前阶段只包含家庭初始化、家长认证、
-节点配对、学生平板配对、作业闭环和审计，不调用云端模型。
+节点配对、学生平板配对、作业闭环、可选视觉模型检查和审计。
 
 ## 开发
 
@@ -16,11 +16,28 @@ uv run home-agent
 HTTP，但不能做端口映射或暴露到公网；远程访问前必须配置 HTTPS。
 
 启动后访问 `http://127.0.0.1:8790/parent/` 使用家长作业中心。第一次使用可在页面初始化
-家庭和第一位家长，登录后录入家庭成员、布置作业、上传作业图片并进行人工审核。阶段 A
-不调用模型；提交会明确进入“待家长审核”，不会生成模拟 AI 判断。
+家庭和第一位家长，登录后录入家庭成员、布置作业、上传作业图片并进行人工审核。模型检查
+默认关闭；提交会明确进入“待家长审核”，不会生成模拟 AI 判断或自动外发图片。
 
 作业图片只接受 JPEG/PNG/WebP，单张最大 12 MiB、每次最多 6 张，家庭总配额 5 GiB。
 原图下载同样要求家长登录。
+
+### 可选 Agent 作业检查
+
+阶段 C 通过 OpenAI-compatible Chat Completions 接入视觉模型，默认配置为 Kimi 的具体模型
+`kimi-k3`。先在 `.env` 配置并重启服务：
+
+```dotenv
+HOME_AGENT_HOMEWORK_MODEL_ENABLED=true
+HOME_AGENT_HOMEWORK_MODEL_BASE_URL=https://api.moonshot.ai/v1
+HOME_AGENT_HOMEWORK_MODEL_API_KEY=<本机密钥>
+HOME_AGENT_HOMEWORK_MODEL_NAME=kimi-k3
+```
+
+GLM 使用同一客户端，只需将 base URL 改为 `https://open.bigmodel.cn/api/paas/v4`，并选择支持
+图像输入的具体模型名（例如 `glm-5v-turbo`）。每次发送都必须由家长在某次提交下点击授权；
+发送内容包括压缩后的作业图片、任务要求、参考答案和评分标准。服务端只保存严格校验后的结构化
+建议及归一化错误码，不保存 API Key 或供应商原始响应。Agent 不会自动接受/退回作业。
 
 学生平板联调时运行：
 

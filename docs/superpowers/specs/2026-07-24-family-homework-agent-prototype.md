@@ -111,11 +111,11 @@ Agent 不获得数据库、文件系统或 shell 的通用访问权。Agent 只�
 
 ### 6.3 Agent 检查
 
-1. 服务器建立检查作业，状态进入 `checking`。
+1. 家长对某次提交逐次授权后，服务器建立独立检查记录，状态进入 `running`；作业状态不变。
 2. provider 接收任务说明、参考信息和提交图像，返回约束 JSON，不允许自由文本直接写入业务状态。
-3. 服务器校验 schema；校验失败可有限重试，仍失败则转 `needs_parent_review`。
+3. 服务器严格校验 schema；阶段 C 不自动重试，校验失败记录为 `failed`，仍可人工审核。
 4. 低置信度、图像不清、题目缺失或标准不足均不得判定正确，转家长确认。
-5. 检查结果向孩子暴露的只是问题位置和第一级提示；家长端可看完整判断与模型原始响应的受控调试视图。
+5. 阶段 C 检查结果仅在家长端展示；不保存模型原始响应，也不向孩子展示完整答案。
 
 ### 6.4 家长审核
 
@@ -164,10 +164,12 @@ pending ──▶ in_progress ──▶ submitted ──▶ checking
 - `id`、`submission_id`、`media_type`、`local_path`、`sha256`、`size_bytes`、`created_at`。
 - 原型仅接受 JPEG / PNG / WebP，服务器不信任客户端的 MIME 声明。
 
-### `inspection_reports`
+### `homework_inspections`
 
-- `id`、`submission_id`、`provider`、`model`、`status`、`confidence`、`summary`、`quality_level`、`items_json`、`child_hint`、`uncertainties_json`、`created_at`。
-- `items_json` 每项至少包含题号/区域、判断、置信度、说明和提示级别。
+- `id`、`household_id`、`submission_id`、`requested_by`、`status`、`model_name`、
+  `prompt_version`、`image_quality`、`summary`、`confidence`、`suggested_decision`、
+  `items_json`、`error_code`、`created_at`、`completed_at`。
+- `items_json` 每项包含位置、问题、提示、类似例子、分步骤引导和置信度，不含完整答案字段。
 
 ### `homework_events`
 
