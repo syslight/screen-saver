@@ -9,6 +9,7 @@
 要求 Flutter 3.44+（stable）。本机 SDK 不在 PATH，位于 `/home/peidong/flutter/bin/flutter`（实测 3.44.6 stable，Dart 3.12.2），本文命令中的 `flutter` 均指该二进制。首次拉取依赖：
 
 ```bash
+cd apps/smart_frame
 flutter pub get
 ```
 
@@ -60,23 +61,23 @@ export LIBRARY_PATH=$HOME/.local/opt/gst/usr/lib/x86_64-linux-gnu
 
 ### 1.5 Home Agent
 
-家庭 Agent 使用 Python 3.12 和 uv，与照片 `daemon/` 的虚拟环境、依赖和数据库完全隔离：
+家庭 Agent 使用 Python 3.12 和 uv，与照片 `services/photo_indexer/` 的虚拟环境、依赖和数据库完全隔离：
 
 ```bash
-cd home_agent
+cd services/home_agent
 uv sync --frozen
 uv run alembic upgrade head
 uv run home-agent
 ```
 
 默认数据目录为 `~/.local/share/family-home-agent`，默认只监听 `127.0.0.1:8790`。
-环境变量见 `home_agent/.env.example`。学生平板阶段 B 的可信家庭 Wi-Fi 原型可显式设置
+环境变量见 `services/home_agent/.env.example`。学生平板阶段 B 的可信家庭 Wi-Fi 原型可显式设置
 `HOME_AGENT_HOST=0.0.0.0`；不得做公网端口映射，远程访问前必须增加 TLS/反向代理。
 
 假节点获得家长端创建的一次性配对码后运行：
 
 ```bash
-cd home_agent
+cd services/home_agent
 uv run fake-room-node --pairing-code '<一次性配对码>'
 ```
 
@@ -94,14 +95,14 @@ base URL 和模型名分别为 `https://api.moonshot.ai/v1`、`kimi-k3`。切换
 ### 1.6 Android 学生端
 
 ```bash
-cd student_app
+cd apps/student
 flutter pub get
 flutter analyze
 flutter test
 flutter build apk --debug
 ```
 
-debug APK 位于 `student_app/build/app/outputs/flutter-apk/app-debug.apk`。可用
+debug APK 位于 `apps/student/build/app/outputs/flutter-apk/app-debug.apk`。可用
 `adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装。平板和服务器连接同一可信
 Wi-Fi 后，在家长作业中心生成 8 位一次性码，平板输入 `<服务器局域网 IP>:8790` 完成绑定。
 当前最低 Android 版本为 6.0（API 23），设备 key 由 `flutter_secure_storage` 存入 Android
@@ -110,6 +111,7 @@ Keystore 支持的安全存储；manifest 禁用应用数据备份，避免 key 
 ## 2. 日常命令
 
 ```bash
+cd apps/smart_frame
 flutter pub get                              # 拉依赖
 flutter analyze                              # 静态检查，提交前必须无问题
 flutter test                                 # 85 个用例，详见第 4 章
@@ -120,17 +122,17 @@ flutter build linux|windows|macos --release  # 出包在 build/<平台>/.../rele
 Home Agent 与共享协议包质量门禁：
 
 ```bash
-cd home_agent
+cd services/home_agent
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src
 uv run pytest --cov=home_agent --cov=linux_room_node
 
-cd ../packages/node_protocol
+cd ../../packages/node_protocol
 /home/peidong/flutter/bin/dart analyze
 /home/peidong/flutter/bin/dart test
 
-cd ../../student_app
+cd ../../apps/student
 /home/peidong/flutter/bin/flutter analyze
 /home/peidong/flutter/bin/flutter test
 /home/peidong/flutter/bin/flutter build apk --debug
@@ -161,15 +163,15 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 
 | 位置 | 日志内容 |
 |---|---|
-| `lib/server/control_server.dart:55` | `控制台已启动: <url>`——手机控制台地址，扫码/浏览器访问用它 |
-| `lib/main.dart:79` | `控制台服务器启动失败: <e>`——端口被占等原因 |
-| `lib/voice/wake_word.dart:63/96/130` | 唤醒词初始化失败 / 检测异常 / KWS 模型下载失败 |
-| `lib/voice/voice_pipeline.dart:127` | `ASR 失败: <e>`——Whisper API 不可达、key 无效等 |
-| `lib/voice/tts_service.dart:43/142` | edge-tts 失败回退系统 TTS / 系统 TTS 也失败 |
+| `apps/smart_frame/lib/features/remote_control/data/control_server.dart:55` | `控制台已启动: <url>`——手机控制台地址，扫码/浏览器访问用它 |
+| `apps/smart_frame/lib/main.dart:79` | `控制台服务器启动失败: <e>`——端口被占等原因 |
+| `apps/smart_frame/lib/features/voice/application/wake_word.dart:63/96/130` | 唤醒词初始化失败 / 检测异常 / KWS 模型下载失败 |
+| `apps/smart_frame/lib/features/voice/application/voice_pipeline.dart:127` | `ASR 失败: <e>`——Whisper API 不可达、key 无效等 |
+| `apps/smart_frame/lib/features/voice/application/tts_service.dart:43/142` | edge-tts 失败回退系统 TTS / 系统 TTS 也失败 |
 
 ### 3.2 语音问题：先看右下角状态文本
 
-语音链路的降级状态文本（`statusMessage`）不进日志，只在屏幕右下角可见：右下角的语音状态指示（`VoiceIndicator`，`lib/ui/widgets/voice_indicator.dart:7`）展示 `VoicePipeline.statusMessage`（`lib/voice/voice_pipeline.dart:37`，展示代码在 `voice_indicator.dart:31`），典型文案：
+语音链路的降级状态文本（`statusMessage`）不进日志，只在屏幕右下角可见：右下角的语音状态指示（`VoiceIndicator`，`apps/smart_frame/lib/features/voice/presentation/voice_indicator.dart:7`）展示 `VoicePipeline.statusMessage`（`apps/smart_frame/lib/features/voice/application/voice_pipeline.dart:37`，展示代码在 `voice_indicator.dart:31`），典型文案：
 
 - `语音初始化失败: <e>`（`voice_pipeline.dart:84`，init 整体异常）
 - `没有麦克风权限，语音不可用`（`voice_pipeline.dart:58`）
@@ -183,19 +185,19 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
-| `test/app_config_test.dart` | 3 | AppConfig NAS 字段：默认值、`fromJson({})` 回落默认、toJson/fromJson 往返逐字段相等 |
-| `test/android_setup_page_test.dart` | 2 | Android 计算节点 URL 校验与规范化 |
-| `test/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
-| `test/control_server_test.dart` | 17 | 控制台 HTTP/WS、照片说明与已确认家庭身份、指令广播、上传、NAS 配置与筛选 |
-| `test/intent_parser_test.dart` | 10 | 天气/时间/日期/农历/照片/音量/播报/语义筛选/其他意图 |
-| `test/nas_filter_test.dart` | 8 | 关键词、截图命名、`@eaDir`、小文件与禁用时放行 |
-| `test/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器 ping/递归列表/下载/认证与空配置 |
-| `test/photo_index_service_test.dart` | 6 | hidden/status、标签/人物、时间/地点/解说和已确认身份 |
-| `test/photo_service_test.dart` | 23 | 本地+NAS、缓存、降级、轮播/hidden/筛选、播放位置持久化与 display 图源 |
-| `test/protocol_test.dart` | 5 | `decodeCommand`（合法、带参数、非法输入抛 `FormatException`）、`encodeState`、`encodeEvent` |
-| `test/weather_service_test.dart` | 2 | `weatherCodeText` 天气码文案、`weatherFromJson` 解析 Open-Meteo 响应 |
+| `apps/smart_frame/test/core/config/app_config_test.dart` | 3 | AppConfig NAS 字段：默认值、`fromJson({})` 回落默认、toJson/fromJson 往返逐字段相等 |
+| `apps/smart_frame/test/features/setup/android_setup_page_test.dart` | 2 | Android 计算节点 URL 校验与规范化 |
+| `apps/smart_frame/test/features/calendar/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
+| `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 17 | 控制台 HTTP/WS、照片说明与已确认家庭身份、指令广播、上传、NAS 配置与筛选 |
+| `apps/smart_frame/test/features/voice/intent_parser_test.dart` | 10 | 天气/时间/日期/农历/照片/音量/播报/语义筛选/其他意图 |
+| `apps/smart_frame/test/features/photos/nas_filter_test.dart` | 8 | 关键词、截图命名、`@eaDir`、小文件与禁用时放行 |
+| `apps/smart_frame/test/features/photos/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器 ping/递归列表/下载/认证与空配置 |
+| `apps/smart_frame/test/features/photos/photo_index_service_test.dart` | 6 | hidden/status、标签/人物、时间/地点/解说和已确认身份 |
+| `apps/smart_frame/test/features/photos/photo_service_test.dart` | 23 | 本地+NAS、缓存、降级、轮播/hidden/筛选、播放位置持久化与 display 图源 |
+| `apps/smart_frame/test/features/remote_control/protocol_test.dart` | 5 | `decodeCommand`（合法、带参数、非法输入抛 `FormatException`）、`encodeState`、`encodeEvent` |
+| `apps/smart_frame/test/features/weather/weather_service_test.dart` | 2 | `weatherCodeText` 天气码文案、`weatherFromJson` 解析 Open-Meteo 响应 |
 
-其中 `test/control_server_test.dart` 是端到端测试，真实启动 HTTP/WS 服务器，有几个值得模仿的写法：
+其中 `apps/smart_frame/test/features/remote_control/control_server_test.dart` 是端到端测试，真实启动 HTTP/WS 服务器，有几个值得模仿的写法：
 
 - **端口 0 由系统分配**（`control_server_test.dart:93`）：`ControlServer(port: 0, ...)`，`setUp` 后从 `server.boundPort` 取实际端口，避免与本机 8780 或其他服务冲突——新增服务器测试沿用此模式，不要写死端口。
 - **Open-Meteo 走 `MockClient`**：geocoding 返回北京坐标、forecast 返回固定天气，不碰外网；中文响应必须 `http.Response.bytes` + utf-8（默认 latin1 会乱码）。
@@ -228,7 +230,7 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 
 **原因**：之前 configure 失败过的缓存把 `CMAKE_INSTALL_PREFIX` 留在了默认值 `/usr/local`。
 
-**解法**：改 `build/linux/x64/release/CMakeCache.txt` 中 `CMAKE_INSTALL_PREFIX` 为 `<项目根>/build/linux/x64/release/bundle`；或直接 `flutter clean` 重来（更省事，代价是全量重编）。
+**解法**：改 `apps/smart_frame/build/linux/x64/release/CMakeCache.txt` 中 `CMAKE_INSTALL_PREFIX` 为 `<智能屏工程>/build/linux/x64/release/bundle`；或在 `apps/smart_frame/` 执行 `flutter clean` 重来（更省事，代价是全量重编）。
 
 ### 5.3 Linux 链接 GStreamer 失败
 

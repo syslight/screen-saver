@@ -1,44 +1,59 @@
 # 架构基线（Architecture）
 
-本文档是 smart_frame 的架构基线：模块划分、启动装配顺序、`CommandService` 指令总线，以及语音交互与手机控制两条主链路的高层数据流。文中事实以代码为准（装配顺序以 `lib/main.dart` 行号为据）。
+本文档是 smart_frame 的架构基线：模块划分、启动装配顺序、`CommandService` 指令总线，以及语音交互与手机控制两条主链路的高层数据流。文中事实以代码为准（装配顺序以 `apps/smart_frame/lib/main.dart` 行号为据）。
 
 两条链路在本文只画高层数据流，字段级细节分别由专项文档展开：WebSocket/HTTP 协议见 `docs/protocol.md`，语音状态机与降级策略见 `docs/voice-pipeline.md`。
+
+## 0. Monorepo 边界
+
+| 顶层目录 | 类型 | 发布与依赖边界 |
+|---|---|---|
+| `apps/smart_frame/` | Flutter 应用 | 智能屏 Linux/macOS/Windows/Android 独立构建单元 |
+| `apps/student/` | Flutter 应用 | 学生 Android 客户端，仅通过 Home Agent HTTP API 通信 |
+| `services/home_agent/` | Python 服务 | 家庭数据、作业、Agent 和 Room Node 协议的服务端权威实现 |
+| `services/photo_indexer/` | Python 守护进程 | 读取 NAS、写共享照片索引，不承载家庭 Agent API |
+| `packages/node_protocol/` | Dart package | 节点协议信封和 canonical fixtures，不依赖任一应用 |
+| `deploy/` / `tool/` | 运维 | 跨应用部署单元和仓库级脚本 |
+
+智能屏内部采用垂直功能模块。`core/` 只放多 feature 共用的配置、网络和平台能力；
+`features/<name>/` 内按实际需要分成 `domain`、`application`、`data`、`presentation`。跨功能引用使用
+`package:smart_frame/...` 的明确路径，避免通过旧的全局 `services/` 或 `ui/widgets/` 目录形成隐式耦合。
 
 ## 1. 模块划分
 
 | 目录 / 文件 | 关键类 / 函数 | 职责 |
 |---|---|---|
-| `lib/config/app_config.dart` | `AppConfig` / `ConfigService` | 19 个配置字段的模型、加载与持久化（`config.json`），零配置可启动 |
-| `lib/services/photo_service.dart` | `PhotoService` / `PhotoItem` | 本地 + NAS 相册聚合、自动轮播、按照片 ID 持久化/恢复播放位置、定时重扫、`nas-cache` 磁盘缓存与下一张预取、NAS 故障静默降级 |
-| `lib/services/photo_index_service.dart` | `PhotoIndexService` / `PhotoDescription` | hidden/标签/人物索引，以及当前照片的已确认家庭身份、时间、地点、第三人称解说的计算端 SQLite / 展示端 HTTP 双后端 |
-| `lib/services/screen_awake_service.dart` | `ScreenAwakeService` | wakelock 常亮；Linux 叠加 X11 屏保/DPMS 关闭与周期重申 |
-| `lib/services/nas_photo_source.dart` | `NasSource` / `NasPhotoSource` / `NasPhotoRef` | NAS WebDAV 图源（`webdav_client`）：连接测试、递归列出远程图片（扩展名 + 截图规则过滤）、按引用下载；错误原样抛给调用方 |
-| `lib/services/nas_filter.dart` | `nasPhotoAllowed`（纯函数） | NAS 截图规则过滤：关键词（替换语义、大小写不敏感、空串跳过）+ 内置截图文件名正则 |
-| `lib/services/weather_service.dart` | `WeatherService` / `weatherFromJson` / `weatherCodeText` | Open-Meteo 地理编码 + 天气定时刷新，失败保留旧数据 |
-| `lib/services/calendar_service.dart` | `calendarInfoFor`（纯函数） | 农历、干支生肖、节气、公历/农历节日（基于 `lunar` 包） |
-| `lib/services/command_service.dart` | `CommandService` | **统一指令总线**：手机 / 语音 / 文字指令的唯一入口，见第 4 章 |
-| `lib/server/control_server.dart` | `ControlServer` | shelf 内嵌 HTTP/WebSocket 服务器：控制台页、指令通道、照片上传、状态广播 |
-| `lib/server/protocol.dart` | `ConsoleCommand` / `decodeCommand` / `encodeState` / `encodeEvent` | 手机端 WS 消息协议编解码 |
-| `lib/voice/voice_pipeline.dart` | `VoicePipeline` / `VoiceState` | 语音状态机：常驻监听 → 唤醒 → 录音 → ASR → 意图 → TTS |
-| `lib/voice/wake_word.dart` | `WakeWordService` / `ensureKwsModel` | sherpa-onnx KWS 唤醒词检测；模型缺失时后台下载 |
-| `lib/voice/asr_client.dart` | `AsrClient` | OpenAI 兼容 Whisper API 客户端（`/audio/transcriptions`） |
-| `lib/voice/tts_service.dart` | `TtsService` | edge-tts 播报（WSS 协议手写），失败回退系统 TTS |
-| `lib/voice/intent_parser.dart` | `parseIntent` / `Intent` / `IntentType` | 本地意图解析（13 种意图，纯 Dart 无外部依赖） |
-| `lib/voice/audio_utils.dart` | `pcmToWav` / `pcmBytesToFloat32` / `generateBeepWav` | PCM/WAV 转换与提示音生成 |
-| `lib/ui/` | `DashboardPage` + 各 widget | 全屏仪表盘：相册背景（按屏幕物理尺寸等比解码，避免 ARM 软件渲染展开超大原图）+ 左上环境信息岛 + 右下动画故事卡 + 语音指示/二维码/设置浮层 |
-| `web_console/index.html` | — | 手机控制台单页（原生 JS，打包进 Flutter assets） |
+| `apps/smart_frame/lib/core/config/app_config.dart` | `AppConfig` / `ConfigService` | 19 个配置字段的模型、加载与持久化（`config.json`），零配置可启动 |
+| `apps/smart_frame/lib/features/photos/application/photo_service.dart` | `PhotoService` / `PhotoItem` | 本地 + NAS 相册聚合、自动轮播、按照片 ID 持久化/恢复播放位置、定时重扫、`nas-cache` 磁盘缓存与下一张预取、NAS 故障静默降级 |
+| `apps/smart_frame/lib/features/photos/application/photo_index_service.dart` | `PhotoIndexService` / `PhotoDescription` | hidden/标签/人物索引，以及当前照片的已确认家庭身份、时间、地点、第三人称解说的计算端 SQLite / 展示端 HTTP 双后端 |
+| `apps/smart_frame/lib/core/platform/screen_awake_service.dart` | `ScreenAwakeService` | wakelock 常亮；Linux 叠加 X11 屏保/DPMS 关闭与周期重申 |
+| `apps/smart_frame/lib/features/photos/data/nas_photo_source.dart` | `NasSource` / `NasPhotoSource` / `NasPhotoRef` | NAS WebDAV 图源（`webdav_client`）：连接测试、递归列出远程图片（扩展名 + 截图规则过滤）、按引用下载；错误原样抛给调用方 |
+| `apps/smart_frame/lib/features/photos/domain/nas_filter.dart` | `nasPhotoAllowed`（纯函数） | NAS 截图规则过滤：关键词（替换语义、大小写不敏感、空串跳过）+ 内置截图文件名正则 |
+| `apps/smart_frame/lib/features/weather/application/weather_service.dart` | `WeatherService` / `weatherFromJson` / `weatherCodeText` | Open-Meteo 地理编码 + 天气定时刷新，失败保留旧数据 |
+| `apps/smart_frame/lib/features/calendar/domain/calendar_service.dart` | `calendarInfoFor`（纯函数） | 农历、干支生肖、节气、公历/农历节日（基于 `lunar` 包） |
+| `apps/smart_frame/lib/features/remote_control/application/command_service.dart` | `CommandService` | **统一指令总线**：手机 / 语音 / 文字指令的唯一入口，见第 4 章 |
+| `apps/smart_frame/lib/features/remote_control/data/control_server.dart` | `ControlServer` | shelf 内嵌 HTTP/WebSocket 服务器：控制台页、指令通道、照片上传、状态广播 |
+| `apps/smart_frame/lib/features/remote_control/domain/protocol.dart` | `ConsoleCommand` / `decodeCommand` / `encodeState` / `encodeEvent` | 手机端 WS 消息协议编解码 |
+| `apps/smart_frame/lib/features/voice/application/voice_pipeline.dart` | `VoicePipeline` / `VoiceState` | 语音状态机：常驻监听 → 唤醒 → 录音 → ASR → 意图 → TTS |
+| `apps/smart_frame/lib/features/voice/application/wake_word.dart` | `WakeWordService` / `ensureKwsModel` | sherpa-onnx KWS 唤醒词检测；模型缺失时后台下载 |
+| `apps/smart_frame/lib/features/voice/application/asr_client.dart` | `AsrClient` | OpenAI 兼容 Whisper API 客户端（`/audio/transcriptions`） |
+| `apps/smart_frame/lib/features/voice/application/tts_service.dart` | `TtsService` | edge-tts 播报（WSS 协议手写），失败回退系统 TTS |
+| `apps/smart_frame/lib/features/voice/application/intent_parser.dart` | `parseIntent` / `Intent` / `IntentType` | 本地意图解析（13 种意图，纯 Dart 无外部依赖） |
+| `apps/smart_frame/lib/features/voice/application/audio_utils.dart` | `pcmToWav` / `pcmBytesToFloat32` / `generateBeepWav` | PCM/WAV 转换与提示音生成 |
+| `apps/smart_frame/lib/features/*/presentation/` | `DashboardPage` + 各 widget | 全屏仪表盘：相册背景（按屏幕物理尺寸等比解码，避免 ARM 软件渲染展开超大原图）+ 左上环境信息岛 + 右下动画故事卡 + 语音指示/二维码/设置浮层 |
+| `apps/smart_frame/assets/web_console/index.html` | — | 手机控制台单页（原生 JS，打包进 Flutter assets） |
 
 ## 2. 模块图
 
 ```
       手机浏览器 ×N                 键盘快捷键                     麦克风
-  (web_console/index.html)      ←→ 空格 Q S Esc                     │
+  (apps/smart_frame/assets/web_console/index.html)      ←→ 空格 Q S Esc                     │
             │                          │                     16kHz PCM 流
    HTTP / WebSocket                    │ 直接调用                    │
             ▼                          ▼（不经总线）                ▼
   ┌───────────────────┐     ┌─────────────────────┐    ┌─────────────────────┐
   │ ControlServer      │     │ ←→ → PhotoService.  │    │ VoicePipeline        │
-  │ （lib/server/）     │     │     next()/prev()   │    │ （lib/voice/）       │
+  │ （remote_control）  │     │     next()/prev()   │    │ （voice/application） │
   │ shelf HTTP + WS    │     │ 空格 → VoicePipeline│    │ KWS 唤醒 → 录音      │
   │  GET /             │     │     .triggerListen()│    │ → ASR → executeText │
   │  GET /ws           │     └─────────────────────┘    │ → TTS 播报          │
@@ -46,7 +61,7 @@
   └─────────┬──────────┘                                           │ 识别文字
             │ ConsoleCommand                                       ▼
             │                    ┌───────────────────────────────────────────┐
-            │                    │ CommandService（lib/services/，指令总线）   │
+            │                    │ CommandService（remote_control，指令总线） │
             └───────────────────▶│ ① executeCommand(ConsoleCommand)          │
                                  │ ② executeText(String) = parseIntent       │
                                  │     → executeIntent(Intent)               │
@@ -60,11 +75,11 @@
   → encodeEvent / encodeState → WebSocket 广播给全部已连接手机。
 ```
 
-关于键盘：`lib/ui/dashboard_page.dart` 的快捷键是轻量本地操作——←/→ 直接调 `PhotoService.next()/prev()`，空格直接调 `VoicePipeline.triggerListen()`，S/Esc 为纯界面行为（设置 / 退出全屏）；Q 切换二维码浮层，隐藏时会调 `CommandService.dismissQr()` 同步本地状态（仅置 `showQrRequested = false` + `notifyListeners()`，不触发广播）。键盘快捷键整体不经指令总线；手机和语音两个入口才走总线；**新增指令（尤其是远程可达的）必须接入总线，不得绕过**。
+关于键盘：`apps/smart_frame/lib/features/dashboard/presentation/dashboard_page.dart` 的快捷键是轻量本地操作——←/→ 直接调 `PhotoService.next()/prev()`，空格直接调 `VoicePipeline.triggerListen()`，S/Esc 为纯界面行为（设置 / 退出全屏）；Q 切换二维码浮层，隐藏时会调 `CommandService.dismissQr()` 同步本地状态（仅置 `showQrRequested = false` + `notifyListeners()`，不触发广播）。键盘快捷键整体不经指令总线；手机和语音两个入口才走总线；**新增指令（尤其是远程可达的）必须接入总线，不得绕过**。
 
-## 3. 启动装配顺序（`lib/main.dart`）
+## 3. 启动装配顺序（`apps/smart_frame/lib/main.dart`）
 
-`main()` 自上而下一次性完成服务装配，顺序如下（行号为 `lib/main.dart` 实际行号）：
+`main()` 自上而下一次性完成服务装配，顺序如下（行号为 `apps/smart_frame/lib/main.dart` 实际行号）：
 
 1. **绑定初始化**（L24-25）：`WidgetsFlutterBinding.ensureInitialized()` + `windowManager.ensureInitialized()`。
 2. **加载配置**（L27-30）：`getApplicationSupportDirectory()` 取应用支持目录 → 构造 `ConfigService` → `load()` 读 `config.json`（缺失/损坏回落默认值）。
@@ -75,7 +90,7 @@
 7. **构造语音状态机**（L52-57）：`VoicePipeline(config, tts, asr, onText: commands.executeText)`——语音链路的识别文字直接注入总线的文字入口。
 8. **回调互注**（L58-59）：`commands.voiceStateText = () => voice.stateText`（状态快照含语音状态）；`commands.onListenRequested = voice.triggerListen`（手机端"按住说话"按钮触发聆听）。
 9. **各服务独立初始化，失败隔离**（L62-67）：`photos.init()` → `photos.applyNasConfig(config, nasSource)`（内部按 `nasEnabled`/`nasRemoteDir` 决定是否真连，失败静默降级）→ `startSlideshow(slideshowSeconds)`；`weather.start(refreshMinutes: ...)`；`voice.init()` 用 `unawaited` 放后台。单个服务失败（无麦克风权限、无网络、NAS 不可达等）不影响其余服务与界面启动。
-10. **加载控制台页并构造服务器**（L69-75）：`rootBundle.loadString('web_console/index.html')` → 构造 `ControlServer(port, commands, photos, indexHtml)`。
+10. **加载控制台页并构造服务器**（L69-75）：`rootBundle.loadString('assets/web_console/index.html')` → 构造 `ControlServer(port, commands, photos, indexHtml)`。
 11. **启动服务器**（L76-80）：`server.start()` 包在 try/catch 中，失败仅 `debugPrint`，应用照常运行（手机控制不可用）。
 12. **常亮与全屏**：`ScreenAwakeService.start()` 启用 wakelock；Linux 叠加 `xset s off` / `xset -dpms` / `xset s noblank` 并周期重申；随后进入沉浸式全屏。
 13. **runApp**（L85-100）：`MultiProvider` 注入 9 个 provider 后启动 `SmartFrameApp`（深色 Material 3 主题，首页 `DashboardPage`）。
@@ -96,7 +111,7 @@
 
 ## 4. 指令总线 `CommandService`
 
-所有远程/文字指令统一经 `CommandService`（`lib/services/command_service.dart`）处理，它持有 `AppConfig`、`PhotoService`、`WeatherService`、`TtsService` 的引用。总线有两个入口：
+所有远程/文字指令统一经 `CommandService`（`apps/smart_frame/lib/features/remote_control/application/command_service.dart`）处理，它持有 `AppConfig`、`PhotoService`、`WeatherService`、`TtsService` 的引用。总线有两个入口：
 
 - **入口① `executeCommand(ConsoleCommand)`**（command_service.dart:45）：手机 WS 指令入口。按 `cmd.action` 分发：`next_photo` / `prev_photo` / `refresh_weather` / `set_volume` / `announce` / `text_command` / `show_qr` / `hide_qr` / `listen`（其中 `text_command` 桥接到入口②，`listen` 经 `onListenRequested` 回调触发 `VoicePipeline.triggerListen`）。执行完成后依次回调 `onEvent(message)` 与 `onStateChanged()`（command_service.dart:85-86）。
 - **入口② `executeText(String)`**（command_service.dart:91）：语音 ASR 结果与手机文字输入共用，即 `executeIntent(parseIntent(text))`——先本地意图解析，再按意图类型执行（查天气/时间/日期/农历、切照片、调音量、播报、显示二维码、帮助、未知），生成中文回复文字。执行完成后回调 `onStateChanged()`（command_service.dart:147）。
@@ -188,15 +203,15 @@ main：NasPhotoSource.configure(url/user/password/remoteDir)（仅建客户端�
 要点：
 
 - `NasPhotoSource` 不在内部吞错误（`ping` / `listPhotos` / `downloadTo` 异常原样抛出），降级决策集中在 `PhotoService`（`photo_service.dart:165-179` 的 `_refreshNas`、`:222-235` 的 `_download`）。
-- 设置页（S 键）"NAS 相册"区保存配置后，先 `nasSource.configure(...)` 重建客户端，再 `photos.applyNasConfig(...)` 立即生效（`lib/ui/widgets/settings_sheet.dart:145-151`）；"测试连接"按钮用当前填写的值建临时实例 `ping()`，不影响运行中的共享实例（`settings_sheet.dart:87-106`）。
+- 设置页（S 键）"NAS 相册"区保存配置后，先 `nasSource.configure(...)` 重建客户端，再 `photos.applyNasConfig(...)` 立即生效（`apps/smart_frame/lib/features/settings/presentation/settings_sheet.dart:145-151`）；"测试连接"按钮用当前填写的值建临时实例 `ping()`，不影响运行中的共享实例（`settings_sheet.dart:87-106`）。
 
 ## 8. 依赖选型
 
-以 `pubspec.yaml` 为准，关键依赖及选型理由：
+以 `apps/smart_frame/pubspec.yaml` 为准，关键依赖及选型理由：
 
 | 包 | 用途 | 选型理由 |
 |---|---|---|
-| `shelf` + `shelf_router` | 内嵌 HTTP 服务器与路由 | Dart 团队官方包，纯 Dart 实现，单测中可直接起服务器（`test/control_server_test.dart`），无需外部组件 |
+| `shelf` + `shelf_router` | 内嵌 HTTP 服务器与路由 | Dart 团队官方包，纯 Dart 实现，单测中可直接起服务器（`apps/smart_frame/test/features/remote_control/control_server_test.dart`），无需外部组件 |
 | `shelf_web_socket` + `web_socket_channel` | WS 指令通道 | 与 shelf 无缝集成；`web_socket_channel` 同时复用于 edge-tts 的 WSS 客户端（`TtsService`） |
 | `shelf_multipart` | 照片上传 multipart 解析 | shelf 生态的 multipart 支持 |
 | `sherpa_onnx` | 本地 KWS 唤醒词 | 离线常驻唤醒、不耗云端额度；支持编辑 `keywords.txt` 自定义唤醒词 |
@@ -211,7 +226,7 @@ main：NasPhotoSource.configure(url/user/password/remoteDir)（仅建客户端�
 | `path_provider` | 应用支持目录 | 各平台定位 `config.json` 与 KWS 模型默认目录 |
 | `path` | 路径处理 | 路径拼接、扩展名判断、上传文件名清洗 |
 | `crypto` | SHA256 | edge-tts `Sec-MS-GEC` 访问令牌计算（`TtsService.secMsGec`）；NAS 缓存文件名哈希（`PhotoService` `_cachePathFor`） |
-| `webdav_client` | NAS WebDAV 客户端 | 群晖等 NAS 的 PROPFIND 递归列目录与 GET 下载，纯 Dart；用 `dart:io HttpServer` 起假 WebDAV 服务器即可端到端单测（`test/nas_photo_source_test.dart`） |
+| `webdav_client` | NAS WebDAV 客户端 | 群晖等 NAS 的 PROPFIND 递归列目录与 GET 下载，纯 Dart；用 `dart:io HttpServer` 起假 WebDAV 服务器即可端到端单测（`apps/smart_frame/test/features/photos/nas_photo_source_test.dart`） |
 
 ## 9. 家庭 Agent 基础设施
 
@@ -228,9 +243,9 @@ main：NasPhotoSource.configure(url/user/password/remoteDir)（仅建客户端�
           配对码→设备密钥       hello/能力/心跳/命令
 ```
 
-- `home_agent/src/home_agent/`：FastAPI API、认证、配对、repository、审计和在线节点 registry。
-- `student_app/`：独立 Flutter Android 客户端；设备固定绑定一个孩子，只消费最小权限作业 API。
-- `home_agent/src/linux_room_node/`：独立假节点进程；保存权限为 `0600` 的设备凭据，断线指数退避。
+- `services/home_agent/src/home_agent/`：FastAPI API、认证、配对、repository、审计和在线节点 registry。
+- `apps/student/`：独立 Flutter Android 客户端；设备固定绑定一个孩子，只消费最小权限作业 API。
+- `services/home_agent/src/linux_room_node/`：独立假节点进程；保存权限为 `0600` 的设备凭据，断线指数退避。
 - `packages/node_protocol/`：Dart 信封和能力模型；与 Python 读取同一份 canonical fixtures。
 - 数据库只保存密码的 Argon2id 哈希和 token/code/device key 的 SHA-256 哈希；明文凭据只返回一次。
 - WebSocket 首帧必须是已认证 `node.hello`；断线清理使用受取消保护的短事务，避免残留在线状态。

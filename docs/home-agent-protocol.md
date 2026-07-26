@@ -1,7 +1,7 @@
 # 家庭 Agent API 与节点协议
 
-本文是 `home_agent/` 与 Linux/Android 房间节点的阶段 1 协议基线。Python 权威实现位于
-`home_agent/src/home_agent/protocol/`，跨语言样例位于
+本文是 `services/home_agent/` 与 Linux/Android 房间节点的阶段 1 协议基线。Python 权威实现位于
+`services/home_agent/src/home_agent/protocol/`，跨语言样例位于
 `packages/node_protocol/fixtures/messages.json`。
 
 ## 1. 安全边界

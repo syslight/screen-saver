@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/home/peidong/.local/bin/uv run --directory /home/peidong/source/screen-saver/daemon python -m smart_frame_photo_daemon --watch --embed --faces --tags
+ExecStart=/home/peidong/.local/bin/uv run --directory /home/peidong/source/screen-saver/services/photo_indexer python -m smart_frame_photo_daemon --watch --embed --faces --tags
 Restart=on-failure
 RestartSec=60
 Environment=SMART_FRAME_CONFIG=%h/.local/share/com.example.smart_frame/config.json

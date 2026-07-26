@@ -9,7 +9,8 @@
 #   pkill -f smart_frame_photo_daemon   # 停当前全套
 #   nohup setsid tool/run_daemon_serial.sh > /dev/null 2>&1 &
 set -uo pipefail
-cd /home/peidong/source/screen-saver/daemon
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$repo_root/services/photo_indexer"
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy 2>/dev/null || true
 LOG=/home/peidong/.local/share/com.example.smart_frame/daemon.log
 UV=/home/peidong/.local/bin/uv

@@ -4,11 +4,12 @@
 
 ## 1. 三平台构建
 
-Flutter 桌面端**不可交叉编译**：打哪个平台的包，就必须在对应系统上构建（`linux/`、`windows/`、`macos/` 三个工程目录均在仓库内）。
+Flutter 桌面端**不可交叉编译**：打哪个平台的包，就必须在对应系统上构建。以下命令均在 `apps/smart_frame/` 执行，其 `linux/`、`windows/`、`macos/` 平台工程均随应用放在该目录。
 
 ### 1.1 Linux（本机已实测）
 
 ```bash
+cd apps/smart_frame
 flutter pub get
 flutter build linux --release
 ```
@@ -27,6 +28,7 @@ bundle/
 需在装有 Visual Studio（Desktop development with C++）的 Windows 机器上执行，命令与 Linux 同构：
 
 ```bash
+cd apps/smart_frame
 flutter pub get
 flutter build windows --release
 ```
@@ -38,6 +40,7 @@ flutter build windows --release
 需在装有 Xcode 的 Mac 上执行：
 
 ```bash
+cd apps/smart_frame
 flutter pub get
 flutter build macos --release
 ```

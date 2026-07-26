@@ -1,6 +1,6 @@
 # 语音链路（Voice Pipeline）
 
-本文档是 smart_frame 语音链路（KWS 唤醒 → 云端 ASR → 本地意图解析 → TTS 播报）的权威文档，事实以 `lib/voice/voice_pipeline.dart`、`lib/voice/wake_word.dart`、`lib/voice/asr_client.dart`、`lib/voice/intent_parser.dart`、`lib/voice/tts_service.dart`、`lib/voice/audio_utils.dart` 为准。按 AGENTS.md 约定：**修改 `lib/voice/` 时必须同步本文档**。语音链路的高层数据流与装配顺序见 `docs/architecture.md` 第 3、5 章，语音状态文本同步到手机端的协议字段见 `docs/protocol.md` 第 3 章。
+本文档是 smart_frame 语音链路（KWS 唤醒 → 云端 ASR → 本地意图解析 → TTS 播报）的权威文档，事实以 `apps/smart_frame/lib/features/voice/application/voice_pipeline.dart`、`apps/smart_frame/lib/features/voice/application/wake_word.dart`、`apps/smart_frame/lib/features/voice/application/asr_client.dart`、`apps/smart_frame/lib/features/voice/application/intent_parser.dart`、`apps/smart_frame/lib/features/voice/application/tts_service.dart`、`apps/smart_frame/lib/features/voice/application/audio_utils.dart` 为准。按 AGENTS.md 约定：**修改 `apps/smart_frame/lib/features/voice/application/` 时必须同步本文档**。语音链路的高层数据流与装配顺序见 `docs/architecture.md` 第 3、5 章，语音状态文本同步到手机端的协议字段见 `docs/protocol.md` 第 3 章。
 
 ## 1. 状态机
 
@@ -80,7 +80,7 @@ final stream = await _recorder!.startStream(const RecordConfig(
 | 途径 | 代码路径 |
 |---|---|
 | 唤醒词命中 | `VoicePipeline` 构造 `WakeWordService(onWake: triggerListen)`（`voice_pipeline.dart:63`），KWS 命中后回调 |
-| 空格键 | `lib/ui/dashboard_page.dart:46` 直接调 `VoicePipeline.triggerListen()`（键盘快捷键不走指令总线，见 `docs/architecture.md` 第 2 章） |
+| 空格键 | `apps/smart_frame/lib/features/dashboard/presentation/dashboard_page.dart:46` 直接调 `VoicePipeline.triggerListen()`（键盘快捷键不走指令总线，见 `docs/architecture.md` 第 2 章） |
 | 手机 listen 指令 | 手机发 WS `{"type":"command","action":"listen"}` → `CommandService.executeCommand` 的 `case 'listen'` 调 `onListenRequested`（`command_service.dart:79-81`）→ 该回调在 `main.dart:49` 注入为 `voice.triggerListen`（即发即弃，不等待聆听完成） |
 
 ## 4. 处理管线
@@ -174,7 +174,7 @@ https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-k
 
 ## 6. 意图种类表（15 种）
 
-`parseIntent`（`lib/voice/intent_parser.dart`，纯 Dart 无外部依赖）把识别文字映射为 `IntentType` 枚举，共 15 个值。语音 ASR 结果与手机端 `text_command` 文字指令**共用同一入口** `CommandService.executeText`，因此下表对两种输入一致。
+`parseIntent`（`apps/smart_frame/lib/features/voice/application/intent_parser.dart`，纯 Dart 无外部依赖）把识别文字映射为 `IntentType` 枚举，共 15 个值。语音 ASR 结果与手机端 `text_command` 文字指令**共用同一入口** `CommandService.executeText`，因此下表对两种输入一致。
 
 解析顺序即匹配优先级（顺序影响结果，与代码一致）：
 
@@ -209,7 +209,7 @@ https://github.com/k2-fsa/sherpa-onnx/releases/download/kws-models/sherpa-onnx-k
 
 ## 7. 相关配置项
 
-以 `lib/config/app_config.dart` 为准，语音链路涉及其中 7 个字段（全部可在应用内按 **S** 修改；ASR 三字段改了即时生效，`listenSeconds`/`wakeWordModelDir` 等读取时机见各自代码）：
+以 `apps/smart_frame/lib/core/config/app_config.dart` 为准，语音链路涉及其中 7 个字段（全部可在应用内按 **S** 修改；ASR 三字段改了即时生效，`listenSeconds`/`wakeWordModelDir` 等读取时机见各自代码）：
 
 | 字段 | 默认值 | 作用 |
 |---|---|---|

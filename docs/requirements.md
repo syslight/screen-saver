@@ -2,7 +2,7 @@
 
 本文档是 smart_frame 的需求基线：第 2 章按模块列出功能需求，每条独立可勾选（当前版本均已实现，故全部打勾）；第 3 章列出非功能需求，作为架构与迭代的长期约束，`docs/roadmap.md` 中的限制项须与这些编号（NFR-x）呼应。
 
-文中事实以代码为准：配置字段以 `lib/config/app_config.dart` 为准，相册扩展名以 `lib/services/photo_service.dart` 的 `imageExts` 为准。
+文中事实以代码为准：配置字段以 `apps/smart_frame/lib/core/config/app_config.dart` 为准，相册扩展名以 `apps/smart_frame/lib/features/photos/application/photo_service.dart` 的 `imageExts` 为准。
 
 ## 1. 项目概述
 
@@ -75,7 +75,7 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
 - NFR-1 **三平台桌面**：Windows / macOS / Linux，Flutter 3.44+（stable），同一套代码出三个平台的包。
 - NFR-2 **全屏常驻**：启动即全屏；`wakelock_plus` 阻止系统休眠，Linux 额外用 `xset` 关闭屏保/DPMS且每 2 分钟及应用恢复时重申；按 Esc 退出全屏。
 - NFR-3 **零配置可启动**：全部 19 个配置字段有默认值，配置文件缺失或损坏时回落默认值；相册目录不存在时自动创建。
-- NFR-4 **失败隔离**：各服务独立初始化，单个失败不影响整体（`lib/main.dart` "各服务独立初始化，单个失败不影响整体"为据）——语音初始化放后台执行，控制台服务器启动失败仅记录日志，应用照常运行。
+- NFR-4 **失败隔离**：各服务独立初始化，单个失败不影响整体（`apps/smart_frame/lib/main.dart` "各服务独立初始化，单个失败不影响整体"为据）——语音初始化放后台执行，控制台服务器启动失败仅记录日志，应用照常运行。
 - NFR-5 **局域网内工作**：手机控制要求与电脑同一局域网；除天气、ASR、edge-tts 与唤醒词模型首次下载外，全部功能（日历、相册、意图解析、系统 TTS）不依赖互联网。
 - NFR-6 **语音链路逐层降级**：
   - 无麦克风权限 → 语音整体不可用，其余功能不受影响；

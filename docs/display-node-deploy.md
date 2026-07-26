@@ -20,10 +20,11 @@ sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
 sudo apt install libgstreamer1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
                  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav
 ```
-clone 项目 + `flutter pub get`。
+clone 项目后进入 `apps/smart_frame/` 执行 `flutter pub get`。
 
 ## 构建
 ```bash
+cd apps/smart_frame
 flutter build linux --release    # 出 build/linux/arm64/release/bundle/
 ```
 > Flutter 桌面不可交叉编译，必须在 arm64 主机上 build。
@@ -31,6 +32,7 @@ flutter build linux --release    # 出 build/linux/arm64/release/bundle/
 Android APK 可在开发机构建：
 
 ```bash
+cd apps/smart_frame
 flutter build apk --release
 ```
 

@@ -2,9 +2,9 @@
 
 跑在 Windows / macOS / Linux 上的全屏智能屏应用（电子相框），Flutter 桌面端。
 
-本仓库也已开始承载独立的家庭 Agent 基础设施：`home_agent/` 是本地优先的 Python
+本仓库也已开始承载独立的家庭 Agent 基础设施：`services/home_agent/` 是本地优先的 Python
 服务端和 Linux 房间节点，`packages/node_protocol/` 是未来 Linux/Android 节点共用的
-Dart 协议包，`student_app/` 是独立的 Android 学生作业端。现有智能屏仍可独立运行。
+Dart 协议包，`apps/student/` 是独立的 Android 学生作业端。现有智能屏仍可独立运行。
 
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Platform](https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-blue)
@@ -27,6 +27,7 @@ Dart 协议包，`student_app/` 是独立的 Android 学生作业端。现有智
 运行与构建：
 
 ```bash
+cd apps/smart_frame
 flutter pub get
 flutter run -d linux          # 开发运行（全屏）
 flutter build linux --release # 出包：build/linux/x64/release/bundle/
@@ -36,7 +37,7 @@ flutter build apk --release   # Android arm64 展示端
 家庭 Agent 阶段 1：
 
 ```bash
-cd home_agent
+cd services/home_agent
 uv sync --frozen
 uv run home-agent             # 默认 http://127.0.0.1:8790
 ```
@@ -54,10 +55,10 @@ GLM 视觉模型检查图片。模型默认关闭，检查建议不会自动改�
 学生平板联调时让 Home Agent 监听局域网，并构建/安装独立 App：
 
 ```bash
-cd home_agent
+cd services/home_agent
 HOME_AGENT_HOST=0.0.0.0 uv run home-agent
 
-cd ../student_app
+cd ../../apps/student
 flutter pub get
 flutter build apk --debug
 adb install -r build/app/outputs/flutter-apk/app-debug.apk
@@ -136,6 +137,7 @@ Android 首次启动需输入同一局域网内的计算节点地址，详见
 ## 测试
 
 ```bash
+cd apps/smart_frame
 flutter analyze
 flutter test    # 若本机配了代理，localhost 被代理劫持时需先 unset http_proxy 等变量
 ```
@@ -143,16 +145,18 @@ flutter test    # 若本机配了代理，localhost 被代理劫持时需先 uns
 ## 架构速览
 
 ```
-lib/
-  config/app_config.dart      配置模型与持久化
-  services/                   weather / calendar / photo / command(统一指令总线)
-  server/                     shelf HTTP+WS 服务器、消息协议
-  voice/                      唤醒词(KWS)、ASR 客户端、意图解析、edge-tts、状态机
-  ui/                         全屏仪表盘与各小组件
-web_console/index.html        手机控制台单页（原生 JS，打包进 assets）
-home_agent/                   家庭 Agent Server + Linux Room Node（独立 Python/uv 工程）
-student_app/                  独立 Android 学生端（配对、作业、相机提交、审核结果）
+apps/
+  smart_frame/                智能屏 Flutter 应用
+    lib/core/                 配置、网络和平台能力
+    lib/features/             相册、语音、天气、日历、远程控制等垂直功能模块
+    assets/web_console/       手机控制台单页
+  student/                    独立 Android 学生端
+services/
+  home_agent/                 家庭 Agent Server + Linux Room Node
+  photo_indexer/              NAS 照片索引与识别守护进程
 packages/node_protocol/       Linux/Android 房间节点共享 Dart 协议模型
+deploy/                       部署单元
+tool/                         全仓运维脚本
 ```
 
 手机 WS 指令与语音/文字意图统一进 `CommandService` 处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为历史直连实现（不经总线、不触发广播），新增指令不得绕过总线。

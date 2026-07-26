@@ -6,31 +6,31 @@
 
 ### L-1 唤醒词模型首次使用需访问 GitHub
 
-- **依据**：`lib/voice/wake_word.dart:23` 的 `modelUrl` 指向 `github.com/k2-fsa/sherpa-onnx/releases/download/...`；`ensureKwsModel`（`lib/voice/wake_word.dart:112`）后台下载，超时 5 分钟。
+- **依据**：`apps/smart_frame/lib/features/voice/application/wake_word.dart:23` 的 `modelUrl` 指向 `github.com/k2-fsa/sherpa-onnx/releases/download/...`；`ensureKwsModel`（`apps/smart_frame/lib/features/voice/application/wake_word.dart:112`）后台下载，超时 5 分钟。
 - **影响**：首次启动（或模型目录被清空）时，若 GitHub release-assets 不可达或下载超时，唤醒词功能不可用。
 - **缓解**：模型只需成功下载一次，之后完全离线；下载失败自动降级为手动模式，可用空格键或手机控制台按钮触发聆听，语音其余链路不受影响（呼应 NFR-5、NFR-6）。
 
 ### L-2 语音识别依赖外部 OpenAI 兼容 API
 
-- **依据**：`lib/voice/asr_client.dart:8`（整个类即 OpenAI 兼容 Whisper API 客户端），`lib/voice/asr_client.dart:23` 的 `isConfigured` 要求 `apiKey` 非空，识别请求为 HTTP POST 至 `$baseUrl/audio/transcriptions`。
+- **依据**：`apps/smart_frame/lib/features/voice/application/asr_client.dart:8`（整个类即 OpenAI 兼容 Whisper API 客户端），`apps/smart_frame/lib/features/voice/application/asr_client.dart:23` 的 `isConfigured` 要求 `apiKey` 非空，识别请求为 HTTP POST 至 `$baseUrl/audio/transcriptions`。
 - **影响**：语音指令的识别准确率、延迟与可用性取决于第三方服务与网络；未配置 API Key 时语音指令链路不可用。
 - **缓解**：未配置时语音回复会提示去设置填写 API 地址与密钥，手机控制台的文字指令链路仍可用（呼应 NFR-6）；`asrBaseUrl` 可指向 Groq 或本地 faster-whisper 等自建服务，后者可使语音链路完全不依赖互联网（呼应 NFR-5）。
 
 ### L-3 控制台无鉴权
 
-- **依据**：`lib/server/control_server.dart:45-52` 注册 `/`、`/ws`、`/api/photos` 三个路由并以 `InternetAddress.anyIPv4` 监听全部网卡，全程无认证中间件、无连接校验。
+- **依据**：`apps/smart_frame/lib/features/remote_control/data/control_server.dart:45-52` 注册 `/`、`/ws`、`/api/photos` 三个路由并以 `InternetAddress.anyIPv4` 监听全部网卡，全程无认证中间件、无连接校验。
 - **影响**：同一局域网内任何设备均可打开控制台、查看状态、发送指令、上传照片。
 - **定位**：按家庭可信局域网场景设计（呼应 NFR-5）；在不可信网络中部署时属于风险而非缺陷，需自行以防火墙等手段隔离。
 
 ### L-4 照片上传无大小与配额限制
 
-- **依据**：`lib/server/control_server.dart:83-103` 的 `_onUpload` 仅校验扩展名白名单（`PhotoService.imageExts`）与内容非空，未限制单文件大小、上传总量与频率。
+- **依据**：`apps/smart_frame/lib/features/remote_control/data/control_server.dart:83-103` 的 `_onUpload` 仅校验扩展名白名单（`PhotoService.imageExts`）与内容非空，未限制单文件大小、上传总量与频率。
 - **影响**：局域网内任何设备可反复上传填满磁盘。
 - **定位**：与 L-3 同属局域网信任模型的一部分（呼应 NFR-5）。
 
 ### L-5 无 iOS 原生 App
 
-- **依据**：仓库已有 `android/` 展示端，但无 `ios/` 目录；iPhone 仍通过 `web_console/index.html` 控制。
+- **依据**：`apps/smart_frame/android/` 已提供展示端，但无 `ios/` 目录；iPhone 仍通过 `apps/smart_frame/assets/web_console/index.html` 控制。
 - **影响**：iOS 端不能常驻后台、无系统级分享入口，需手动输入地址或扫码进入。
 - **定位**：Android 用于全屏 display 节点，iOS 暂保留零安装的浏览器控制台。
 

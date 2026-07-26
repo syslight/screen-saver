@@ -14,7 +14,8 @@
 #   tool/run.sh          跑 release bundle（生产）
 #   tool/run.sh --dev    flutter run -d linux（开发）
 set -euo pipefail
-cd "$(dirname "$0")/.."
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$repo_root/apps/smart_frame"
 export DISPLAY="${DISPLAY:-:0}"
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy 2>/dev/null || true
 

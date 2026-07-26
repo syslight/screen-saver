@@ -40,7 +40,7 @@ git worktree list
 
 拆分任务时，每份简报至少写清：目标、基线 commit、允许修改的文件、禁止修改的文件、输入/输出接口、验收命令、交接格式、依赖与建议归并顺序。可复制本文末尾模板。
 
-适合并行：不同模块、实现与只读审查、互不重叠的测试/文档。慎重并行：`pubspec.yaml`、`main.dart`、协议定义、共享配置模型、同一测试文件；这些文件应指定唯一 owner。
+适合并行：不同模块、实现与只读审查、互不重叠的测试/文档。慎重并行：`apps/smart_frame/pubspec.yaml`、`apps/smart_frame/lib/main.dart`、协议定义、共享配置模型、同一测试文件；这些文件应指定唯一 owner。
 
 ## 4. 创建 worktree
 

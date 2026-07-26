@@ -1,6 +1,6 @@
 # 手机控制协议（Protocol）
 
-本文档是 smart_frame 手机控制协议的权威定义，事实以 `lib/server/protocol.dart`、`lib/server/control_server.dart`、`lib/services/command_service.dart` 为准。按 AGENTS.md 约定：**修改 `lib/server/` 时必须同步本文档**。手机控制链路的高层数据流见 `docs/architecture.md` 第 6 章（装配顺序见其第 3 章），本文只写字段级协议。
+本文档是 smart_frame 手机控制协议的权威定义，事实以 `apps/smart_frame/lib/features/remote_control/domain/protocol.dart`、`apps/smart_frame/lib/features/remote_control/data/control_server.dart`、`apps/smart_frame/lib/features/remote_control/application/command_service.dart` 为准。按 AGENTS.md 约定：**修改 `features/remote_control/` 时必须同步本文档**。手机控制链路的高层数据流见 `docs/architecture.md` 第 6 章（装配顺序见其第 3 章），本文只写字段级协议。
 
 ## 1. 连接与路由
 
@@ -8,7 +8,7 @@
 
 | 方法与路径 | 处理 | 说明 |
 |---|---|---|
-| `GET /` | 返回控制台单页 | `content-type: text/html; charset=utf-8`，内容为 Flutter asset `web_console/index.html` |
+| `GET /` | 返回控制台单页 | `content-type: text/html; charset=utf-8`，内容为 Flutter asset `assets/web_console/index.html` |
 | `POST /api/filter` | 按 CLIP 文本语义筛选轮播 | JSON 请求 `{"q":"猫"}`；响应 `{"ok":true,"query":"猫","count":12}` |
 | `POST /api/filter/clear` | 清除语义筛选，恢复全部可播放照片 | 响应 `{"ok":true}` |
 | `GET /ws` | WebSocket 升级 | 指令与状态通道，消息格式见第 2、3 章 |
@@ -25,7 +25,7 @@
 - **多客户端**：所有已连接手机保存在 `_clients` 集合中，数量不限；任何一台发出指令，执行结果（event）与最新状态（state）都广播给**全部**已连接手机，天然实现多设备同步。
 - **连接即推状态**：WS 连接建立后，服务器立即向该连接发送一条 state 快照（`control_server.dart:65`）。
 - **不断连容错**：收到非法 WS 消息只回一条 event，不关闭连接（见第 2 章）。
-- 官方控制台页断线后每 2 秒自动重连（`web_console/index.html` 的 `connect()`）。
+- 官方控制台页断线后每 2 秒自动重连（`apps/smart_frame/assets/web_console/index.html` 的 `connect()`）。
 
 ## 2. 客户端 → 服务器：command 消息
 
@@ -129,7 +129,7 @@ WS 文本帧，JSON 对象：
 
 ## 5. NAS 配置：/api/config
 
-web 控制台（`web_console/index.html` 的「NAS 相册设置」卡片）通过三个 REST 端点配置 NAS 相册，与桌面设置页（S 键）等价、写同一份 `config.json`。配置范围仅 NAS 7 字段；密码掩码——读取不返回、保存时空串表示不改。三端点响应均为 `content-type: application/json`。
+web 控制台（`apps/smart_frame/assets/web_console/index.html` 的「NAS 相册设置」卡片）通过三个 REST 端点配置 NAS 相册，与桌面设置页（S 键）等价、写同一份 `config.json`。配置范围仅 NAS 7 字段；密码掩码——读取不返回、保存时空串表示不改。三端点响应均为 `content-type: application/json`。
 
 ### GET /api/config
 
