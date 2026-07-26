@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import 'package:smart_frame/core/config/app_config.dart';
+import 'package:smart_frame/features/music/application/music_service.dart';
 import 'package:smart_frame/features/photos/application/photo_index_service.dart';
 import 'package:smart_frame/features/remote_control/domain/protocol.dart';
 import 'package:smart_frame/features/calendar/domain/calendar_service.dart';
@@ -30,6 +31,9 @@ class CommandService extends ChangeNotifier {
   final WeatherService weather;
   final TtsService tts;
 
+  /// 背景音乐在照片索引初始化后由 main 注入。
+  MusicService? music;
+
   /// 索引服务（筛选播放用，main 装配后注入）。null = 筛选不可用。
   PhotoIndexService? photoIndex;
 
@@ -39,7 +43,7 @@ class CommandService extends ChangeNotifier {
   /// 状态变化（触发服务器广播最新状态）
   VoidCallback? onStateChanged;
 
-  /// 手机端"按住说话"按钮请求聆听（由 main 接到 VoicePipeline）
+  /// 手机端按钮请求聆听（由 main 接到薄客户端 VoiceProvider）。
   VoidCallback? onListenRequested;
 
   /// 由 main 注入：语音状态文本（用于状态快照）
@@ -86,6 +90,30 @@ class CommandService extends ChangeNotifier {
         tts.volume = (cmd.value ?? tts.volume).clamp(0.0, 1.0);
         config.volume = tts.volume;
         message = '音量 ${(tts.volume * 100).round()}%';
+      case 'set_music_enabled':
+        final service = music;
+        if (service == null) {
+          message = '背景音乐不可用';
+        } else {
+          await service.setEnabled((cmd.value ?? 1) >= 0.5, forward: false);
+          message = service.enabled ? '背景音乐已播放' : '背景音乐已暂停';
+        }
+      case 'set_music_muted':
+        final service = music;
+        if (service == null) {
+          message = '背景音乐不可用';
+        } else {
+          await service.setMuted((cmd.value ?? 1) >= 0.5, forward: false);
+          message = service.muted ? '背景音乐已静音' : '背景音乐声音已打开';
+        }
+      case 'set_music_volume':
+        final service = music;
+        if (service == null) {
+          message = '背景音乐不可用';
+        } else {
+          await service.setVolume(cmd.value ?? service.volume, forward: false);
+          message = '音乐音量 ${(service.volume * 100).round()}%';
+        }
       case 'announce':
         final text = cmd.text ?? '';
         if (text.isEmpty) {
@@ -200,6 +228,12 @@ class CommandService extends ChangeNotifier {
         weather.data?.summary ?? (weather.error != null ? '获取失败' : '加载中…'),
     'voice': voiceStateText?.call() ?? '-',
     'volume': tts.volume,
+    'musicEnabled': music?.enabled ?? false,
+    'musicMuted': music?.muted ?? true,
+    'musicVolume': music?.volume ?? 0.0,
+    'musicTitle': music?.currentTitle ?? '背景音乐不可用',
+    'musicMood': music?.currentMood.label ?? '—',
+    'musicQuiet': music?.quietHoursActive ?? false,
     'nas': photos.nasStatus,
   };
 }

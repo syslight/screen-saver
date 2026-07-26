@@ -9,7 +9,10 @@ smart_frame 的完整文档体系。项目门面（功能介绍、快捷键、�
 | [architecture.md](architecture.md) | 架构基线：模块划分、启动装配顺序、`CommandService` 指令总线、语音与手机控制两条主链路数据流 | 新增模块或指令、动装配顺序、想搞清楚数据怎么流时 |
 | [protocol.md](protocol.md) | 手机控制协议权威定义：HTTP 端点、WebSocket 消息字段、照片上传接口 | 改 `apps/smart_frame/lib/features/remote_control/`、写第三方客户端、调试手机端通信时（改协议必须同步本文档） |
 | [home-agent-protocol.md](home-agent-protocol.md) | 家庭 Agent HTTP/WS 协议：家长/学生认证、配对、作业 API、节点信封与命令 | 改 `services/home_agent/`、学生 App、Linux/Android 房间节点或共享协议包时 |
-| [voice-pipeline.md](voice-pipeline.md) | 语音链路权威文档：四态状态机、KWS/ASR/意图/TTS 行为与降级策略 | 改 `apps/smart_frame/lib/features/voice/application/`、排查语音问题、配置 ASR/TTS 时（改语音链路必须同步本文档） |
+| [thin-display-media-agent.md](thin-display-media-agent.md) | 薄展示端、服务端照片/音乐与按设备语音回送的目标架构 | 改相册 C/S 边界、媒体 API、语音路由或部署拓扑时 |
+| [cloud-control-deploy.md](cloud-control-deploy.md) | 阿里云 Cloud Control、Caddy、Home Hub Connector 与家长绑定部署清单 | 部署或排查跨网络控制时 |
+| [voice-pipeline.md](voice-pipeline.md) | 语音链路权威文档：设备原生唤醒、薄客户端、服务端断句/ASR/Agent/TTS 与降级策略 | 改 Android 唤醒桥、`VoiceClient` 或 Home Agent 语音服务时（改语音链路必须同步本文档） |
+| [music-library.md](music-library.md) | 授权曲库：在线来源、署名清单、安装方式和 Agent 入库边界 | 增加/替换背景音乐、部署新 display 节点或审核音乐版权时 |
 | [development.md](development.md) | 开发者上手指南：环境搭建、日常命令、调试手段、测试说明、常见坑 | 新机器搭环境、跑测试、踩到代理/CMake/GStreamer 坑时 |
 | [agent-workflow.md](agent-workflow.md) | 多 Agent + Git worktree 协作 SOP：隔离、任务契约、跨工具启动、验收与交接 | 使用 Codex、Claude、Kimi 等并行开发或审查时 |
 | [commit-convention.md](commit-convention.md) | Git commit 规范：原子提交、标题格式、变更/负面影响/Review 重点与验证模板 | 获准提交代码、审查提交历史或准备合并时 |
@@ -17,3 +20,7 @@ smart_frame 的完整文档体系。项目门面（功能介绍、快捷键、�
 | [roadmap.md](roadmap.md) | 已知限制（逐条带代码依据、呼应 NFR 编号）与候选改进方向 | 评估新需求是否撞上已知限制、规划迭代时 |
 
 另：`docs/superpowers/specs/` 存放设计规格，`docs/superpowers/plans/` 存放实施计划。
+
+当前云端/家庭节点方向见 [家庭云控制平台规格](superpowers/specs/2026-07-26-cloud-control-platform.md)。
+“小方”本地唤醒、自动断句与连续对话见
+[连续家庭语音规格](superpowers/specs/2026-07-26-continuous-family-voice.md)。

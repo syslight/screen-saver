@@ -8,6 +8,120 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:smart_frame/core/config/app_config.dart';
 import 'package:smart_frame/features/photos/application/photo_service.dart';
 
+/// 家长可确认的家庭关系称谓。只允许关系，不接收姓名或自由文本。
+const familyIdentityLabels = <String>[
+  '爸爸',
+  '妈妈',
+  '爷爷',
+  '奶奶',
+  '外公',
+  '外婆',
+  '哥哥',
+  '姐姐',
+  '弟弟',
+  '妹妹',
+  '宝宝',
+  '伯伯',
+  '叔叔',
+  '姑姑',
+  '舅舅',
+  '姨妈',
+  '家人',
+  '访客',
+];
+
+class PersonProfile {
+  const PersonProfile({
+    required this.subjectName,
+    required this.photoCount,
+    required this.samplePhotoIds,
+    required this.sampleFaceIds,
+    this.identityLabel,
+    this.confirmed = false,
+  });
+
+  final String subjectName;
+  final int photoCount;
+  final List<String> samplePhotoIds;
+  final List<int> sampleFaceIds;
+  final String? identityLabel;
+  final bool confirmed;
+
+  Map<String, dynamic> toJson() => {
+    'subjectName': subjectName,
+    'photoCount': photoCount,
+    'samplePhotoIds': samplePhotoIds,
+    'sampleFaceIds': sampleFaceIds,
+    'identityLabel': identityLabel,
+    'confirmed': confirmed,
+  };
+
+  factory PersonProfile.fromJson(Map<String, dynamic> json) => PersonProfile(
+    subjectName: json['subjectName'] as String? ?? '',
+    photoCount: json['photoCount'] as int? ?? 0,
+    samplePhotoIds:
+        (json['samplePhotoIds'] as List?)?.whereType<String>().toList() ??
+        const [],
+    sampleFaceIds:
+        (json['sampleFaceIds'] as List?)?.whereType<int>().toList() ?? const [],
+    identityLabel: json['identityLabel'] as String?,
+    confirmed: json['confirmed'] as bool? ?? false,
+  );
+}
+
+class FaceSample {
+  const FaceSample({
+    required this.id,
+    required this.photoId,
+    required this.bbox,
+  });
+
+  final int id;
+  final String photoId;
+  final List<double> bbox;
+
+  Map<String, dynamic> toJson() => {'id': id, 'photoId': photoId, 'bbox': bbox};
+
+  factory FaceSample.fromJson(Map<String, dynamic> json) => FaceSample(
+    id: json['id'] as int? ?? 0,
+    photoId: json['photoId'] as String? ?? '',
+    bbox:
+        (json['bbox'] as List?)
+            ?.whereType<num>()
+            .map((value) => value.toDouble())
+            .toList() ??
+        const [],
+  );
+}
+
+class PersonProfilePage {
+  const PersonProfilePage({required this.total, required this.profiles});
+
+  final int total;
+  final List<PersonProfile> profiles;
+
+  Map<String, dynamic> toJson() => {
+    'total': total,
+    'profiles': profiles.map((profile) => profile.toJson()).toList(),
+    'allowedIdentityLabels': familyIdentityLabels,
+  };
+
+  factory PersonProfilePage.fromJson(Map<String, dynamic> json) =>
+      PersonProfilePage(
+        total: json['total'] as int? ?? 0,
+        profiles:
+            (json['profiles'] as List?)
+                ?.whereType<Map>()
+                .map(
+                  (profile) => PersonProfile.fromJson(
+                    Map<String, dynamic>.from(profile),
+                  ),
+                )
+                .toList() ??
+            const [],
+      );
+}
+
 /// 当前照片的说明信息。索引库字段优先，路径/文件时间只作安全回退。
 class PhotoDescription {
   const PhotoDescription({
@@ -256,6 +370,13 @@ abstract class PhotoIndexBackend {
   Future<Set<String>> byTag(String tag);
   Future<Set<String>> byPerson(String person);
   Future<List<String>> persons();
+  Future<PersonProfilePage> personProfiles({
+    bool? confirmed,
+    int limit = 12,
+    int offset = 0,
+  });
+  Future<void> setPersonIdentity(String subjectName, String? identityLabel);
+  Future<FaceSample?> faceSample(int faceId);
   Future<PhotoDescription?> describe(String id);
   Future<void> markHidden(String id, String reason);
   Future<Set<String>> searchText(String query);
@@ -330,6 +451,110 @@ class SqliteIndexBackend implements PhotoIndexBackend {
       'ORDER BY subject_name',
     );
     return rows.map((r) => r['subject_name'] as String).toList();
+  }
+
+  @override
+  Future<PersonProfilePage> personProfiles({
+    bool? confirmed,
+    int limit = 12,
+    int offset = 0,
+  }) async {
+    final filter = confirmed == null
+        ? ''
+        : 'AND COALESCE(p.confirmed, 0)=${confirmed ? 1 : 0} ';
+    final countRows = await _db!.rawQuery(
+      'SELECT COUNT(*) AS c FROM ('
+      'SELECT f.subject_name FROM faces f '
+      'LEFT JOIN person_profiles p ON p.subject_name=f.subject_name '
+      'WHERE f.subject_name IS NOT NULL $filter'
+      'GROUP BY f.subject_name)',
+    );
+    final total = countRows.first['c'] as int? ?? 0;
+    final rows = await _db!.rawQuery(
+      'SELECT f.subject_name, COUNT(DISTINCT f.photo_id) AS photo_count, '
+      'p.identity_label, COALESCE(p.confirmed, 0) AS confirmed '
+      'FROM faces f '
+      'LEFT JOIN person_profiles p ON p.subject_name=f.subject_name '
+      'WHERE f.subject_name IS NOT NULL $filter'
+      'GROUP BY f.subject_name, p.identity_label, p.confirmed '
+      'ORDER BY photo_count DESC, f.subject_name '
+      'LIMIT ? OFFSET ?',
+      [limit, offset],
+    );
+    final profiles = <PersonProfile>[];
+    for (final row in rows) {
+      final subject = row['subject_name'] as String;
+      final sampleRows = await _db!.rawQuery(
+        'SELECT f.id, f.photo_id FROM faces f '
+        'JOIN photos ph ON ph.id=f.photo_id '
+        'WHERE f.subject_name=? AND COALESCE(ph.hidden, 0)=0 '
+        'ORDER BY f.id',
+        [subject],
+      );
+      final samplePhotoIds = <String>[];
+      final sampleFaceIds = <int>[];
+      for (final sample in sampleRows) {
+        final photoId = sample['photo_id'] as String;
+        if (samplePhotoIds.contains(photoId)) continue;
+        samplePhotoIds.add(photoId);
+        sampleFaceIds.add(sample['id'] as int);
+        if (samplePhotoIds.length == 3) break;
+      }
+      profiles.add(
+        PersonProfile(
+          subjectName: subject,
+          photoCount: row['photo_count'] as int? ?? 0,
+          samplePhotoIds: samplePhotoIds,
+          sampleFaceIds: sampleFaceIds,
+          identityLabel: row['identity_label'] as String?,
+          confirmed: (row['confirmed'] as int? ?? 0) == 1,
+        ),
+      );
+    }
+    return PersonProfilePage(total: total, profiles: profiles);
+  }
+
+  @override
+  Future<void> setPersonIdentity(
+    String subjectName,
+    String? identityLabel,
+  ) async {
+    final face = await _db!.rawQuery(
+      'SELECT 1 FROM faces WHERE subject_name=? LIMIT 1',
+      [subjectName],
+    );
+    if (face.isEmpty) throw ArgumentError('人物聚类不存在');
+    if (identityLabel == null) {
+      await _db!.delete(
+        'person_profiles',
+        where: 'subject_name=?',
+        whereArgs: [subjectName],
+      );
+      return;
+    }
+    await _db!.insert('person_profiles', {
+      'subject_name': subjectName,
+      'identity_label': identityLabel,
+      'confirmed': 1,
+      'sort_order': familyIdentityLabels.indexOf(identityLabel),
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  @override
+  Future<FaceSample?> faceSample(int faceId) async {
+    final rows = await _db!.rawQuery(
+      'SELECT id, photo_id, bbox FROM faces WHERE id=?',
+      [faceId],
+    );
+    if (rows.isEmpty) return null;
+    final row = rows.first;
+    final decoded = jsonDecode(row['bbox'] as String? ?? '[]') as List;
+    return FaceSample(
+      id: row['id'] as int,
+      photoId: row['photo_id'] as String,
+      bbox: decoded.whereType<num>().map((value) => value.toDouble()).toList(),
+    );
   }
 
   @override
@@ -478,66 +703,87 @@ String? _captionFromTags(String? rawTags) {
   return '照片呈现了${tags.join('、')}。';
 }
 
-/// 展示节点：HTTP 调计算节点 control_server 的 /api/index/*。
+/// 展示节点：用节点凭据调用 home_agent 的照片索引接口。
 class HttpIndexBackend implements PhotoIndexBackend {
-  HttpIndexBackend(this.baseUrl);
+  HttpIndexBackend(
+    this.baseUrl, {
+    required this.nodeId,
+    required this.deviceKey,
+  });
   final String baseUrl;
+  final String nodeId;
+  final String deviceKey;
+
+  Map<String, String> get _headers => {
+    'Authorization': 'Node $nodeId:$deviceKey',
+  };
 
   @override
   Future<void> open() async {}
 
   @override
   Future<Map<String, int>> status() async {
-    final resp = await http.get(Uri.parse('$baseUrl/api/index/status'));
+    final resp = await http.get(
+      Uri.parse('$baseUrl/api/v1/media/status'),
+      headers: _headers,
+    );
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     return {
-      'total': body['total'] as int? ?? 0,
-      'hidden': body['hidden'] as int? ?? 0,
-      'tagged': body['tagged'] as int? ?? 0,
-      'persons': body['persons'] as int? ?? 0,
+      'total': body['visiblePhotos'] as int? ?? 0,
+      'hidden': body['hiddenPhotos'] as int? ?? 0,
+      'tagged': 0,
+      'persons': 0,
     };
   }
 
   @override
   Future<Set<String>> hidden() async {
-    final resp = await http.get(Uri.parse('$baseUrl/api/index/hidden'));
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    return (body['hidden'] as List).cast<String>().toSet();
+    // 服务端目录已经排除 hidden，展示端不再执行照片去重。
+    return {};
   }
 
   @override
   Future<Set<String>> byTag(String tag) async {
-    final resp = await http.get(
-      Uri.parse('$baseUrl/api/index/bytag?t=${Uri.encodeQueryComponent(tag)}'),
-    );
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    return (body['ids'] as List).cast<String>().toSet();
+    return {};
   }
 
   @override
   Future<Set<String>> byPerson(String person) async {
-    final resp = await http.get(
-      Uri.parse(
-        '$baseUrl/api/index/byperson?p=${Uri.encodeQueryComponent(person)}',
-      ),
-    );
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    return (body['ids'] as List).cast<String>().toSet();
+    return {};
   }
 
   @override
   Future<List<String>> persons() async {
-    final resp = await http.get(Uri.parse('$baseUrl/api/index/persons'));
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    return (body['persons'] as List).cast<String>().toList();
+    return [];
+  }
+
+  @override
+  Future<PersonProfilePage> personProfiles({
+    bool? confirmed,
+    int limit = 12,
+    int offset = 0,
+  }) async {
+    return const PersonProfilePage(total: 0, profiles: []);
+  }
+
+  @override
+  Future<void> setPersonIdentity(
+    String subjectName,
+    String? identityLabel,
+  ) async {
+    throw UnsupportedError('人物身份只允许在服务端家长界面修改');
+  }
+
+  @override
+  Future<FaceSample?> faceSample(int faceId) async {
+    return null;
   }
 
   @override
   Future<PhotoDescription?> describe(String id) async {
     final resp = await http.get(
-      Uri.parse(
-        '$baseUrl/api/index/description?id=${Uri.encodeQueryComponent(id)}',
-      ),
+      Uri.parse('$baseUrl/api/v1/media/photos/$id/description'),
+      headers: _headers,
     );
     if (resp.statusCode == 404) return null;
     if (resp.statusCode != 200) {
@@ -550,22 +796,12 @@ class HttpIndexBackend implements PhotoIndexBackend {
 
   @override
   Future<void> markHidden(String id, String reason) async {
-    await http.post(
-      Uri.parse('$baseUrl/api/annotate'),
-      headers: {'content-type': 'application/json'},
-      body: jsonEncode({'id': id, 'reason': reason}),
-    );
+    throw UnsupportedError('照片隐藏只允许在服务端执行');
   }
 
   @override
   Future<Set<String>> searchText(String query) async {
-    final resp = await http.get(
-      Uri.parse(
-        '$baseUrl/api/search/text?q=${Uri.encodeQueryComponent(query)}&n=500',
-      ),
-    );
-    final body = jsonDecode(resp.body) as Map<String, dynamic>;
-    return (body['results'] as List).map((e) => e['id'] as String).toSet();
+    return {};
   }
 
   @override
@@ -672,6 +908,28 @@ class PhotoIndexService extends ChangeNotifier {
   Future<Set<String>> byTag(String tag) => backend.byTag(tag);
   Future<Set<String>> byPerson(String person) => backend.byPerson(person);
   Future<List<String>> persons() => backend.persons();
+  Future<PersonProfilePage> personProfiles({
+    bool? confirmed,
+    int limit = 12,
+    int offset = 0,
+  }) => backend.personProfiles(
+    confirmed: confirmed,
+    limit: limit,
+    offset: offset,
+  );
+
+  Future<void> setPersonIdentity(
+    String subjectName,
+    String? identityLabel,
+  ) async {
+    await backend.setPersonIdentity(subjectName, identityLabel);
+    if (_descriptionId != null) {
+      final item = _photos.current;
+      if (item != null) _onPhotosChanged(force: true);
+    }
+    notifyListeners();
+  }
+
   Future<Set<String>> searchText(String query) => backend.searchText(query);
 
   /// 人工标注：标记照片为某类别并立即隐藏（playable 跳过）。存 reason=`user_<类别>`。

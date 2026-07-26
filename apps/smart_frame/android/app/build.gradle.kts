@@ -20,7 +20,8 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        ndk { abiFilters += "arm64-v8a" }
+        // Do not hard-code ndk.abiFilters here: Flutter's --target-platform and
+        // --split-per-abi select ARMv7/ARM64 per deployment without duplicating apps.
     }
 
     buildTypes {

@@ -1,8 +1,8 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as image_lib;
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -18,7 +18,6 @@ import 'package:smart_frame/features/remote_control/application/command_service.
 import 'package:smart_frame/features/photos/data/nas_photo_source.dart';
 import 'package:smart_frame/features/photos/application/photo_index_service.dart';
 import 'package:smart_frame/features/photos/application/photo_service.dart';
-import 'package:smart_frame/features/voice/application/voice_pipeline.dart';
 import 'package:smart_frame/features/remote_control/domain/protocol.dart';
 
 /// 内置 HTTP/WebSocket 服务器：serve 手机控制台页面、处理指令与照片上传，
@@ -32,8 +31,6 @@ class ControlServer {
     required this.configService,
     required this.nas,
     required this.photoIndex,
-    this.voice,
-    this.ttsController,
   });
 
   final int port;
@@ -52,12 +49,6 @@ class ControlServer {
   /// 照片索引/去重服务（保存配置后应用去重开关）
   final PhotoIndexService photoIndex;
 
-  /// 语音管线（compute 节点：WS /api/voice 服务 ARM；display 为 null）
-  final VoicePipeline? voice;
-
-  /// x86 推给 ARM 的 TTS 音频流（voice external 模式注入）
-  final StreamController<Uint8List>? ttsController;
-
   HttpServer? _server;
   final Set<WebSocketChannel> _clients = {};
 
@@ -73,7 +64,6 @@ class ControlServer {
     final router = Router()
       ..get('/', (Request req) => Response.ok(indexHtml, headers: _htmlHeaders))
       ..get('/ws', webSocketHandler(_onWebSocket))
-      ..get('/api/voice', webSocketHandler(_onVoice))
       ..get('/api/config', _onGetConfig)
       ..post('/api/config', _onPutConfig)
       ..post('/api/config/test', _onTestConfig)
@@ -84,6 +74,9 @@ class ControlServer {
       ..get('/api/index/bytag', _onIndexByTag)
       ..get('/api/index/byperson', _onIndexByPerson)
       ..get('/api/index/persons', _onIndexPersons)
+      ..get('/api/index/person-profiles', _onPersonProfiles)
+      ..post('/api/index/person-profile', _onSetPersonProfile)
+      ..get('/api/index/person-face', _onPersonFace)
       ..get('/api/index/description', _onIndexDescription)
       ..get('/api/search/similar', (r) => _proxySearch(r, 'similar'))
       ..get('/api/search/text', (r) => _proxySearch(r, 'text'))
@@ -123,52 +116,6 @@ class ControlServer {
       },
       onDone: () => _clients.remove(ws),
       onError: (_) => _clients.remove(ws),
-    );
-  }
-
-  /// 语音 C/S（WS /api/voice）：ARM 推音频流 + trigger；x86 喂 voice +
-  /// 推 state/TTS 回 ARM。
-  void _onVoice(WebSocketChannel ws, String? protocol) {
-    final voice = this.voice;
-    final tts = ttsController;
-    if (voice == null || tts == null) {
-      ws.sink.add(encodeEvent('voice 不可用（display 节点不提供）'));
-      ws.sink.close();
-      return;
-    }
-    void onState() {
-      ws.sink.add(
-        jsonEncode({
-          'type': 'voice_state',
-          'state': voice.stateText,
-          'lastHeard': voice.lastHeard,
-          'lastReply': voice.lastReply,
-        }),
-      );
-    }
-
-    voice.addListener(onState);
-    onState();
-    final ttsSub = tts.stream.listen((mp3) => ws.sink.add(mp3));
-    ws.stream.listen(
-      (msg) {
-        if (msg is Uint8List) {
-          voice.injectAudio(msg);
-        } else if (msg is String) {
-          try {
-            final j = jsonDecode(msg) as Map<String, dynamic>;
-            if (j['type'] == 'trigger') voice.triggerListen();
-          } catch (_) {}
-        }
-      },
-      onDone: () {
-        voice.removeListener(onState);
-        ttsSub.cancel();
-      },
-      onError: (_) {
-        voice.removeListener(onState);
-        ttsSub.cancel();
-      },
     );
   }
 
@@ -274,6 +221,133 @@ class ControlServer {
     final persons = await photoIndex.persons();
     return Response.ok(jsonEncode({'persons': persons}), headers: _jsonHeaders);
   }
+
+  Future<Response> _onPersonProfiles(Request req) async {
+    final status = req.url.queryParameters['status'] ?? 'all';
+    final confirmed = switch (status) {
+      'all' => null,
+      'confirmed' => true,
+      'unconfirmed' => false,
+      _ => false,
+    };
+    if (!const {'all', 'confirmed', 'unconfirmed'}.contains(status)) {
+      return _badRequest('status 必须为 all、confirmed 或 unconfirmed');
+    }
+    final limit = int.tryParse(req.url.queryParameters['limit'] ?? '12');
+    final offset = int.tryParse(req.url.queryParameters['offset'] ?? '0');
+    if (limit == null ||
+        limit < 1 ||
+        limit > 50 ||
+        offset == null ||
+        offset < 0) {
+      return _badRequest('limit 必须为 1..50，offset 必须大于等于 0');
+    }
+    final page = await photoIndex.personProfiles(
+      confirmed: confirmed,
+      limit: limit,
+      offset: offset,
+    );
+    return Response.ok(jsonEncode(page.toJson()), headers: _jsonHeaders);
+  }
+
+  Future<Response> _onSetPersonProfile(Request req) async {
+    final Map<String, dynamic> body;
+    try {
+      body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
+    } catch (_) {
+      return _badRequest('请求体不是合法 JSON');
+    }
+    final subject = (body['subjectName'] as String?)?.trim();
+    final rawLabel = body['identityLabel'];
+    if (subject == null || subject.isEmpty) {
+      return _badRequest('缺少 subjectName');
+    }
+    if (rawLabel != null && rawLabel is! String) {
+      return _badRequest('identityLabel 必须为字符串或 null');
+    }
+    final label = rawLabel is String ? rawLabel.trim() : null;
+    if (label != null && !familyIdentityLabels.contains(label)) {
+      return _badRequest('identityLabel 不是允许的家庭关系称谓');
+    }
+    try {
+      await photoIndex.setPersonIdentity(subject, label);
+      return Response.ok(
+        jsonEncode({
+          'ok': true,
+          'subjectName': subject,
+          'identityLabel': label,
+          'confirmed': label != null,
+        }),
+        headers: _jsonHeaders,
+      );
+    } on ArgumentError catch (error) {
+      return _badRequest(error.message?.toString() ?? '人物聚类不存在');
+    } catch (error) {
+      return Response.internalServerError(
+        body: jsonEncode({'ok': false, 'error': '$error'}),
+        headers: _jsonHeaders,
+      );
+    }
+  }
+
+  Future<Response> _onPersonFace(Request req) async {
+    final faceId = int.tryParse(req.url.queryParameters['id'] ?? '');
+    if (faceId == null || faceId < 1) return _badRequest('id 必须为正整数');
+    final sample = await photoIndex.backend.faceSample(faceId);
+    if (sample == null || sample.bbox.length < 4) {
+      return Response.notFound('face sample not found');
+    }
+    if (req.url.queryParameters['meta'] == '1') {
+      return Response.ok(jsonEncode(sample.toJson()), headers: _jsonHeaders);
+    }
+    final file = await photos.fileForId(sample.photoId);
+    if (file == null || !file.existsSync()) {
+      return Response.notFound('file unavailable');
+    }
+    final source = image_lib.decodeImage(await file.readAsBytes());
+    if (source == null) return Response.notFound('image unavailable');
+    final x1 = sample.bbox[0];
+    final y1 = sample.bbox[1];
+    final x2 = sample.bbox[2];
+    final y2 = sample.bbox[3];
+    final faceWidth = x2 - x1;
+    final faceHeight = y2 - y1;
+    if (faceWidth <= 0 || faceHeight <= 0) {
+      return Response.notFound('invalid face bounds');
+    }
+    final padding = (faceWidth > faceHeight ? faceWidth : faceHeight) * 0.4;
+    final left = (x1 - padding).floor().clamp(0, source.width - 1);
+    final top = (y1 - padding).floor().clamp(0, source.height - 1);
+    final right = (x2 + padding).ceil().clamp(left + 1, source.width);
+    final bottom = (y2 + padding).ceil().clamp(top + 1, source.height);
+    var cropped = image_lib.copyCrop(
+      source,
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    );
+    if (cropped.width > 360 || cropped.height > 360) {
+      cropped = image_lib.copyResize(
+        cropped,
+        width: cropped.width >= cropped.height ? 360 : null,
+        height: cropped.height > cropped.width ? 360 : null,
+        interpolation: image_lib.Interpolation.average,
+      );
+    }
+    return Response.ok(
+      image_lib.encodeJpg(cropped, quality: 86),
+      headers: {
+        'content-type': 'image/jpeg',
+        'cache-control': 'private, max-age=3600',
+      },
+    );
+  }
+
+  Response _badRequest(String message) => Response.badRequest(
+    body: jsonEncode({'ok': false, 'error': message}),
+    headers: _jsonHeaders,
+  );
 
   Future<Response> _onIndexDescription(Request req) async {
     final id = req.url.queryParameters['id'];

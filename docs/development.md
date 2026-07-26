@@ -74,6 +74,24 @@ uv run home-agent
 环境变量见 `services/home_agent/.env.example`。学生平板阶段 B 的可信家庭 Wi-Fi 原型可显式设置
 `HOME_AGENT_HOST=0.0.0.0`；不得做公网端口映射，远程访问前必须增加 TLS/反向代理。
 
+当前服务器可安装仓库提供的 systemd 用户服务，让 Home Agent 常驻并监听家庭局域网：
+
+```bash
+mkdir -p ~/.config/systemd/user ~/.local/share/family-home-agent
+ln -s /home/peidong/source/screen-saver/deploy/home-agent.service \
+  ~/.config/systemd/user/home-agent.service
+systemctl --user daemon-reload
+systemctl --user enable --now home-agent.service
+curl http://127.0.0.1:8790/health/ready
+```
+
+阿里云控制平面使用 `HOME_AGENT_DEPLOYMENT_MODE=cloud`，参考
+`deploy/cloud-control.service`、`deploy/cloud/Caddyfile` 和 `deploy/cloud/cloud-control.env.example`。
+家庭服务器首次用节点码执行 `home-hub-connector --cloud <HTTPS 地址> --pairing-code <code>`，
+确认凭据文件生成后再启用 `deploy/home-hub-connector.service`。家庭 8780/8790 均不对公网开放。
+
+应用启动时自动执行数据库迁移；空库由家长 App 的“初始化家庭”创建首个家庭和家长账号。
+
 假节点获得家长端创建的一次性配对码后运行：
 
 ```bash
@@ -108,13 +126,31 @@ Wi-Fi 后，在家长作业中心生成 8 位一次性码，平板输入 `<服�
 当前最低 Android 版本为 6.0（API 23），设备 key 由 `flutter_secure_storage` 存入 Android
 Keystore 支持的安全存储；manifest 禁用应用数据备份，避免 key 随备份迁移。
 
+### 1.7 Android 家长控制端
+
+```bash
+cd apps/parent
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+flutter build apk --release --split-per-abi
+```
+
+debug APK 位于 `apps/parent/build/app/outputs/flutter-apk/app-debug.apk`。局域网地址自动连接
+`8790` 做家长认证、连接 `8780/ws` 控制智能屏；HTTPS 地址连接 Cloud Control，通过节点能力
+发现 Home Hub 并转发相册命令。首次空库可在 App 中初始化 edge 家庭；云端新手机用 10 分钟
+单次绑定码。bearer 只存 `flutter_secure_storage`，普通偏好只存非敏感会话元数据。
+现代 Android 手机可安装约 18 MB 的 `app-arm64-v8a-release.apk`；当前原型发布包使用 debug key
+签名，正式分发前必须配置独立发布签名。
+
 ## 2. 日常命令
 
 ```bash
 cd apps/smart_frame
 flutter pub get                              # 拉依赖
 flutter analyze                              # 静态检查，提交前必须无问题
-flutter test                                 # 85 个用例，详见第 4 章
+flutter test                                 # 93 个用例，详见第 4 章
 flutter run -d linux                         # 开发运行（全屏）
 flutter build linux|windows|macos --release  # 出包在 build/<平台>/.../release/ 下
 ```
@@ -136,6 +172,11 @@ cd ../../apps/student
 /home/peidong/flutter/bin/flutter analyze
 /home/peidong/flutter/bin/flutter test
 /home/peidong/flutter/bin/flutter build apk --debug
+
+cd ../parent
+/home/peidong/flutter/bin/flutter analyze
+/home/peidong/flutter/bin/flutter test
+/home/peidong/flutter/bin/flutter build apk --debug
 ```
 
 Python 集成测试会在临时目录迁移数据库，并在 localhost 启动真实 Uvicorn + Fake Room Node，
@@ -153,7 +194,7 @@ unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy /home/peidong/flutter/bin/flutter test
 ```
 
-本机最新实测（2026-07-26）：上述 `env -u` 方式跑 `flutter test`，85 个用例全部通过。
+本机最新实测（2026-07-26）：上述 `env -u` 方式跑 `flutter test`，95 个用例全部通过。
 
 ## 3. 调试
 
@@ -165,35 +206,36 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 |---|---|
 | `apps/smart_frame/lib/features/remote_control/data/control_server.dart:55` | `控制台已启动: <url>`——手机控制台地址，扫码/浏览器访问用它 |
 | `apps/smart_frame/lib/main.dart:79` | `控制台服务器启动失败: <e>`——端口被占等原因 |
-| `apps/smart_frame/lib/features/voice/application/wake_word.dart:63/96/130` | 唤醒词初始化失败 / 检测异常 / KWS 模型下载失败 |
-| `apps/smart_frame/lib/features/voice/application/voice_pipeline.dart:127` | `ASR 失败: <e>`——Whisper API 不可达、key 无效等 |
 | `apps/smart_frame/lib/features/voice/application/tts_service.dart:43/142` | edge-tts 失败回退系统 TTS / 系统 TTS 也失败 |
+| Android `ClientManager` / `NativeService` | AILABS 固件原生唤醒 callback 注册、撤销与状态 |
+| Home Agent `voice turn completed` | 服务端 ASR / Agent / TTS 分段耗时，不含原始音频和凭据 |
 
 ### 3.2 语音问题：先看右下角状态文本
 
-语音链路的降级状态文本（`statusMessage`）不进日志，只在屏幕右下角可见：右下角的语音状态指示（`VoiceIndicator`，`apps/smart_frame/lib/features/voice/presentation/voice_indicator.dart:7`）展示 `VoicePipeline.statusMessage`（`apps/smart_frame/lib/features/voice/application/voice_pipeline.dart:37`，展示代码在 `voice_indicator.dart:31`），典型文案：
+语音链路的降级状态文本（`statusMessage`）显示在屏幕右下角 `VoiceIndicator`，典型文案：
 
-- `语音初始化失败: <e>`（`voice_pipeline.dart:84`，init 整体异常）
-- `没有麦克风权限，语音不可用`（`voice_pipeline.dart:58`）
-- `未找到唤醒词模型，正在后台下载…` / `唤醒词模型不可用，可用空格键或手机按钮触发`（`voice_pipeline.dart:66/72`）
+- `没有麦克风权限，语音不可用`
+- `原生唤醒不可用，可触屏手动对话`
+- `语音 Agent 连接失败: <错误>`
 
 所以排查语音问题的顺序：先看屏幕右下角状态文本定位降级原因，再回 `flutter run` 控制台找对应 `debugPrint` 细节。各状态与降级分支的完整说明见 [voice-pipeline.md](voice-pipeline.md)。
 
 ## 4. 测试说明
 
-`flutter test` 共 85 个用例，全部是纯 Dart 单测（无 widget 测试），不需要真机窗口环境：
+`flutter test` 共 95 个用例，全部是纯 Dart 单测（无 widget 测试），不需要真机窗口环境：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
 | `apps/smart_frame/test/core/config/app_config_test.dart` | 3 | AppConfig NAS 字段：默认值、`fromJson({})` 回落默认、toJson/fromJson 往返逐字段相等 |
-| `apps/smart_frame/test/features/setup/android_setup_page_test.dart` | 2 | Android 计算节点 URL 校验与规范化 |
+| `apps/smart_frame/test/features/music/music_service_test.dart` | 2 | 跨午夜间静音与音乐/TTS ducking |
+| `apps/smart_frame/test/features/setup/android_setup_page_test.dart` | 2 | Android Agent URL 校验与规范化 |
 | `apps/smart_frame/test/features/calendar/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
-| `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 17 | 控制台 HTTP/WS、照片说明与已确认家庭身份、指令广播、上传、NAS 配置与筛选 |
+| `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 20 | 控制台 HTTP/WS、照片说明、人物档案确认接口、TTS/音乐独立控制、指令广播、上传、NAS 配置与筛选 |
 | `apps/smart_frame/test/features/voice/intent_parser_test.dart` | 10 | 天气/时间/日期/农历/照片/音量/播报/语义筛选/其他意图 |
 | `apps/smart_frame/test/features/photos/nas_filter_test.dart` | 8 | 关键词、截图命名、`@eaDir`、小文件与禁用时放行 |
 | `apps/smart_frame/test/features/photos/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器 ping/递归列表/下载/认证与空配置 |
-| `apps/smart_frame/test/features/photos/photo_index_service_test.dart` | 6 | hidden/status、标签/人物、时间/地点/解说和已确认身份 |
-| `apps/smart_frame/test/features/photos/photo_service_test.dart` | 23 | 本地+NAS、缓存、降级、轮播/hidden/筛选、播放位置持久化与 display 图源 |
+| `apps/smart_frame/test/features/photos/photo_index_service_test.dart` | 8 | hidden/status、标签/人物、人物身份确认/撤销、时间/地点/解说和已确认身份 |
+| `apps/smart_frame/test/features/photos/photo_service_test.dart` | 24 | 本地+NAS、缓存、索引 ID 直接下载、降级、轮播/hidden/筛选、播放位置持久化与 display 图源 |
 | `apps/smart_frame/test/features/remote_control/protocol_test.dart` | 5 | `decodeCommand`（合法、带参数、非法输入抛 `FormatException`）、`encodeState`、`encodeEvent` |
 | `apps/smart_frame/test/features/weather/weather_service_test.dart` | 2 | `weatherCodeText` 天气码文案、`weatherFromJson` 解析 Open-Meteo 响应 |
 

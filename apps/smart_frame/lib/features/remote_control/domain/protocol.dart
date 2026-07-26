@@ -4,8 +4,9 @@ import 'dart:convert';
 class ConsoleCommand {
   ConsoleCommand({required this.action, this.text, this.value});
 
-  /// next_photo / prev_photo / refresh_weather / set_volume / announce /
-  /// text_command / show_qr / listen
+  /// next_photo / prev_photo / refresh_weather / set_volume /
+  /// set_music_enabled / set_music_muted / set_music_volume / announce /
+  /// text_command / show_qr / hide_qr / listen
   final String action;
   final String? text;
   final double? value;

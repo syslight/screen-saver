@@ -5,8 +5,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:image/image.dart' as image_lib;
 import 'package:path/path.dart' as p;
 import 'package:smart_frame/core/config/app_config.dart';
+import 'package:smart_frame/features/music/application/music_service.dart';
 import 'package:smart_frame/features/remote_control/data/control_server.dart';
 import 'package:smart_frame/features/remote_control/domain/protocol.dart';
 import 'package:smart_frame/features/remote_control/application/command_service.dart';
@@ -58,6 +60,7 @@ void main() {
   late ConfigService configService;
   late _FakeNasPhotoSource nas;
   late PhotoIndexService photoIndex;
+  late MusicService music;
 
   /// 端口 0 = 系统分配，避免与本机其他服务冲突；setUp 后取实际值
   late int port;
@@ -122,6 +125,7 @@ void main() {
     configService = ConfigService(photoDir.path);
     await configService.load();
     configService.config.photoDir = photoDir.path;
+    configService.config.musicOutputEnabled = false;
     nas = _FakeNasPhotoSource(
       refs: [
         NasPhotoRef(path: '/photo/x.jpg', size: 10),
@@ -144,6 +148,9 @@ void main() {
       SqliteIndexBackend(p.join(photoDir.path, 'index_test.db')),
     );
     await photoIndex.init(configService.config);
+    music = MusicService(configService: configService, photoIndex: photoIndex);
+    await music.init();
+    commands.music = music;
     server = ControlServer(
       port: 0,
       commands: commands,
@@ -158,6 +165,7 @@ void main() {
   });
 
   tearDown(() async {
+    music.dispose();
     photoIndex.dispose();
     await server.stop();
     await photoDir.delete(recursive: true);
@@ -218,6 +226,93 @@ void main() {
     expect(body['location'], '广州');
     expect(body['caption'], '爷爷和弟弟在客厅一起看书。');
     expect(body['identities'], ['爷爷']);
+  });
+
+  test('人物档案 API 支持查询、确认和撤销家庭身份', () async {
+    final id = photos.current!.id;
+    await File(id).writeAsBytes(
+      image_lib.encodeJpg(image_lib.Image(width: 100, height: 80)),
+    );
+    final db = await databaseFactoryFfi.openDatabase(
+      p.join(photoDir.path, 'index_test.db'),
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    await db.insert('photos', {'id': id, 'hidden': 0});
+    final faceId = await db.insert('faces', {
+      'photo_id': id,
+      'subject_name': 'person_8',
+      'bbox': '[20,10,60,50]',
+    });
+    await db.close();
+
+    final list = await http.get(
+      Uri.parse(
+        'http://localhost:$port/api/index/person-profiles'
+        '?status=unconfirmed&limit=12&offset=0',
+      ),
+    );
+    final listBody = jsonDecode(list.body) as Map<String, dynamic>;
+    expect(list.statusCode, 200);
+    expect(listBody['total'], 1);
+    expect(listBody['allowedIdentityLabels'], contains('弟弟'));
+    final profile = (listBody['profiles'] as List).single as Map;
+    expect(profile['subjectName'], 'person_8');
+    expect(profile['samplePhotoIds'], [id]);
+    expect(profile['sampleFaceIds'], [faceId]);
+
+    final face = await http.get(
+      Uri.parse('http://localhost:$port/api/index/person-face?id=$faceId'),
+    );
+    expect(face.statusCode, 200);
+    expect(face.headers['content-type'], 'image/jpeg');
+    final faceImage = image_lib.decodeJpg(face.bodyBytes);
+    expect(faceImage, isNotNull);
+    expect(faceImage!.width, greaterThan(40));
+    expect(faceImage.height, greaterThan(40));
+
+    final confirm = await http.post(
+      Uri.parse('http://localhost:$port/api/index/person-profile'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'subjectName': 'person_8', 'identityLabel': '弟弟'}),
+    );
+    expect(confirm.statusCode, 200);
+    expect(jsonDecode(confirm.body), containsPair('confirmed', true));
+
+    final confirmed = await http.get(
+      Uri.parse(
+        'http://localhost:$port/api/index/person-profiles?status=confirmed',
+      ),
+    );
+    expect(
+      (jsonDecode(confirmed.body)['profiles'] as List).single,
+      containsPair('identityLabel', '弟弟'),
+    );
+
+    final clear = await http.post(
+      Uri.parse('http://localhost:$port/api/index/person-profile'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'subjectName': 'person_8', 'identityLabel': null}),
+    );
+    expect(clear.statusCode, 200);
+    expect(jsonDecode(clear.body), containsPair('confirmed', false));
+  });
+
+  test('人物档案 API 拒绝非法筛选、自由文本身份和不存在聚类', () async {
+    final invalidQuery = await http.get(
+      Uri.parse(
+        'http://localhost:$port/api/index/person-profiles?status=unknown',
+      ),
+    );
+    expect(invalidQuery.statusCode, 400);
+
+    Future<http.Response> save(String subject, Object? label) => http.post(
+      Uri.parse('http://localhost:$port/api/index/person-profile'),
+      headers: {'content-type': 'application/json'},
+      body: jsonEncode({'subjectName': subject, 'identityLabel': label}),
+    );
+
+    expect((await save('person_0', '张三')).statusCode, 400);
+    expect((await save('person_404', '哥哥')).statusCode, 400);
   });
 
   test('POST /api/filter 缺少查询时返回 400', () async {
@@ -299,6 +394,32 @@ void main() {
     );
     expect(tts.volume, closeTo(0.3, 0.001));
     expect(commands.currentState()['volume'], closeTo(0.3, 0.001));
+  });
+
+  test('背景音乐使用独立开关、静音和音量状态', () async {
+    await commands.executeCommand(
+      decodeCommand(
+        jsonEncode({
+          'type': 'command',
+          'action': 'set_music_volume',
+          'value': 0.35,
+        }),
+      ),
+    );
+    await commands.executeCommand(
+      decodeCommand(
+        jsonEncode({
+          'type': 'command',
+          'action': 'set_music_muted',
+          'value': 1,
+        }),
+      ),
+    );
+    expect(music.volume, closeTo(0.35, 0.001));
+    expect(music.muted, isTrue);
+    expect(commands.currentState()['musicVolume'], closeTo(0.35, 0.001));
+    expect(commands.currentState()['musicMuted'], isTrue);
+    expect(commands.currentState()['musicMood'], isNot('—'));
   });
 
   test('multipart 上传照片后相册立即可见', () async {

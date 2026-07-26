@@ -151,6 +151,59 @@ void main() {
     expect(await index.byPerson('person_1'), {bId});
   });
 
+  test('人物档案按照片数分页，并支持确认和撤销家庭身份', () async {
+    final aId = p.join(photoDir.path, 'a.jpg');
+    final bId = p.join(photoDir.path, 'b.jpg');
+    await File(aId).writeAsBytes([1]);
+    await File(bId).writeAsBytes([2]);
+    final dbPath = await seedDb(
+      {
+        'a': {'id': aId, 'hidden': 0},
+        'b': {'id': bId, 'hidden': 0},
+      },
+      [
+        {'photo_id': aId, 'subject_name': 'person_0'},
+        {'photo_id': bId, 'subject_name': 'person_0'},
+        {'photo_id': bId, 'subject_name': 'person_1'},
+      ],
+      [
+        {'subject_name': 'person_1', 'identity_label': '哥哥', 'confirmed': 1},
+      ],
+    );
+    final backend = SqliteIndexBackend(dbPath);
+    addTearDown(backend.close);
+    await backend.open();
+
+    final unconfirmed = await backend.personProfiles(confirmed: false);
+    expect(unconfirmed.total, 1);
+    expect(unconfirmed.profiles.single.subjectName, 'person_0');
+    expect(unconfirmed.profiles.single.photoCount, 2);
+    expect(unconfirmed.profiles.single.samplePhotoIds, [aId, bId]);
+
+    await backend.setPersonIdentity('person_0', '弟弟');
+    final confirmed = await backend.personProfiles(confirmed: true);
+    expect(confirmed.total, 2);
+    expect(
+      confirmed.profiles.map((profile) => profile.identityLabel),
+      containsAll(['哥哥', '弟弟']),
+    );
+
+    await backend.setPersonIdentity('person_0', null);
+    expect((await backend.personProfiles(confirmed: false)).total, 1);
+  });
+
+  test('人物身份不能写入不存在的聚类', () async {
+    final dbPath = await seedDb({}, []);
+    final backend = SqliteIndexBackend(dbPath);
+    addTearDown(backend.close);
+    await backend.open();
+
+    expect(
+      () => backend.setPersonIdentity('person_404', '哥哥'),
+      throwsArgumentError,
+    );
+  });
+
   test('照片路径推断拍摄时间与明确地点目录', () {
     final precise = inferPhotoDate(
       '/Photos/DCIM/Camera/2022/10/IMG_20221001_105505.jpg',

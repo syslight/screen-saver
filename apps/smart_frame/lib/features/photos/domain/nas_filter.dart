@@ -34,8 +34,9 @@ bool nasPhotoAllowed(
   int minBytes = 0,
 }) {
   if (!enabled) return true;
-  if (pathOrName.split(RegExp(r'[/\\]')).any((s) => s == '@eaDir'))
+  if (pathOrName.split(RegExp(r'[/\\]')).any((s) => s == '@eaDir')) {
     return false;
+  }
   if (minBytes > 0 && size < minBytes) return false;
   final lower = pathOrName.toLowerCase();
   for (final keyword in keywords) {

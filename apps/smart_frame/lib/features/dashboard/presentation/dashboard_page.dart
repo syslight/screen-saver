@@ -16,6 +16,7 @@ import 'package:smart_frame/features/dashboard/presentation/clock_widget.dart';
 import 'package:smart_frame/features/photos/presentation/photo_slideshow.dart';
 import 'package:smart_frame/features/photos/presentation/photo_info_widget.dart';
 import 'package:smart_frame/features/photos/presentation/annotate_bar.dart';
+import 'package:smart_frame/features/music/presentation/music_control_panel.dart';
 import 'package:smart_frame/features/remote_control/presentation/qrcode_overlay.dart';
 import 'package:smart_frame/features/settings/presentation/settings_sheet.dart';
 import 'package:smart_frame/features/voice/presentation/voice_indicator.dart';
@@ -135,6 +136,11 @@ class _DashboardPageState extends State<DashboardPage> {
                       left: compact ? 18 : 32,
                       bottom: compact ? 18 : 28,
                       child: const VoiceIndicator(),
+                    ),
+                    Positioned(
+                      left: compact ? 18 : 32,
+                      bottom: compact ? 72 : 82,
+                      child: const MusicControlPanel(),
                     ),
                   ],
                 );

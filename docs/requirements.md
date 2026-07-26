@@ -37,27 +37,40 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
 - [x] FR-P-7 NAS 相册来源：可配置 WebDAV NAS（`nasEnabled` / `nasWebdavUrl` / `nasWebdavUser` / `nasWebdavPassword` / `nasRemoteDir`），远程图片与本地目录混合轮播（本地在前按路径排序，NAS 在后按文件名排序）；NAS 列表独立于本地重扫，每 300 秒刷新一次；`nasRemoteDir` 为空视为未配置，即使启用也不访问 NAS。
 - [x] FR-P-8 NAS 图片不预下载，按需拉取并落磁盘缓存（应用支持目录 `nas-cache/`，文件名 = sha256(远程路径) 前 16 位 + 原扩展名）；缓存上限 500MB，超出按最久未访问（LRU）淘汰；展示当前张时后台预取下一张 NAS 图。
 - [x] FR-P-9 NAS 截图规则过滤（`nasFilterEnabled` 默认开，仅作用于 NAS 来源）：路径或文件名含 `nasFilterKeywords` 任一关键词（默认 `截图` / `screenshot` / `屏幕快照` / `收集`，大小写不敏感，替换语义，空串跳过）即排除；文件名命中内置截图命名正则（`^Screenshot[_ -]`、`^Screen Shot`、`^screencap`，大小写不敏感）即排除。两个来源都只认 `imageExts`，视频不进相册。
-- [x] FR-P-10 NAS 状态（`未启用` / `未配置` / `已连接 N 张` / `已连接 N 张（已过滤 M）` / `连接失败`）进入状态快照 `nas` 字段，手机控制台可见。
+- [x] FR-P-10 NAS 状态（`未启用` / `未配置` / `连接中` / `已连接 N 张` / `已连接 N 张（已过滤 M）` / `连接失败`）进入状态快照 `nas` 字段，手机控制台可见。
 - [x] FR-P-11 每次切换后把当前照片 ID 写入 `slideshow_state.json`；启动时等待首次 NAS 列表并按 ID 恢复，不依赖会随增删变化的数组下标。
 - [x] FR-P-12 当前照片可显示拍摄时间、地点与简短文字解说：索引元数据优先，文件名/日期目录/明确相册目录安全回退；缺失或不可靠字段不显示。
 - [x] FR-P-13 屏幕左上角统一显示时间、广州天气与日历；右下角用大字故事卡跟随照片切换动画。
 - [x] FR-P-14 照片说明按“已确认家庭身份 → 地点 → 事件/动作 → 画面细节”组织；身份只显示关系标签，不显示姓名，未经家长确认不展示。
 - [x] FR-P-15 展示端按屏幕物理尺寸等比缩小解码超大照片，避免 RK3588 软件渲染时把相机原图完整展开导致内存/渲染进程异常。
+- [x] FR-P-16 家长可在 Web 控制台查看按照片数排序的人脸聚类及最多 3 张带留白的人脸裁剪预览，把聚类确认成预置家庭关系称谓或撤销确认；不允许输入姓名或自由文本，确认结果写入共享索引库并立即用于照片故事。
+- [x] FR-P-17 CCL takeover 不替换默认 HOME、不 suspend/卸载原厂持久系统包；Magisk 启动守护在系统正常启动后拉起同一个沉浸式相册 Activity，并在原厂页面抢占时恢复前台。
+
+### 2.3.1 智能配乐
+
+- [x] FR-B-1 背景音乐与 TTS 使用独立音量，默认音乐音量 55%，支持播放/暂停、静音和音量调节。
+- [x] FR-B-2 根据已确认家庭身份、拍摄时间、地点和照片说明自动匹配温暖日常、童年成长、旅行远方、岁月回忆、欢乐相聚或宁静风景。
+- [x] FR-B-3 一个故事主题至少连续 10 分钟，主题变化使用约 3 秒淡入淡出，不随每张照片生硬切歌。
+- [x] FR-B-4 用户音乐目录和保存来源、许可证、署名信息的主乐库均位于服务端；display 只缓存所选曲目。缺少匹配曲目时保持静音，不在展示端生成音乐。
+- [x] FR-B-5 22:00–08:00 自动静音；TTS 播报期间背景音乐降低到目标音量的 15%，播报后恢复。
+- [x] FR-B-6 `home_agent` 根据照片和家庭设置选择已有曲目，只有目标 display 节点输出音乐。
+- [x] FR-B-7 展示端不包含音乐生成器；曲库准备是独立后台职责，原始家庭照片不为配乐上传到外部音乐服务。
 
 ### 2.4 语音交互
 
-- [x] FR-V-1 三种触发方式：本地唤醒词（sherpa-onnx KWS，常驻监听）、空格键、手机控制台按钮。
-- [x] FR-V-2 唤醒词模型缺失时后台自动下载（sherpa-onnx wenetspeech KWS 模型）；自定义唤醒词可编辑配置目录下 `kws-model/keywords.txt`。
-- [x] FR-V-3 触发后播放提示音并录音 `listenSeconds`（默认 5 秒）。
-- [x] FR-V-4 录音送 OpenAI 兼容的 Whisper API 识别（`asrBaseUrl` / `asrApiKey` / `asrModel` 可配置，可指向 OpenAI、Groq 或本地 faster-whisper）。
-- [x] FR-V-5 识别文字经本地意图解析（`parseIntent`）映射为指令，意图共 13 种：天气、时间、日期、农历、上一张、下一张、音量增、音量减、设定音量、播报、显示二维码、帮助、未知。
-- [x] FR-V-6 手机控制台输入的文字指令与语音识别结果走同一意图解析和指令总线。
+- [x] FR-V-1 AILABS 终端复用固件“天猫精灵”KWS，也保留触摸、空格和控制端手动入口；空闲时不上传麦克风音频。厂商账号未登录时由 Magisk 只读日志适配器桥接固件 wake event。
+- [x] FR-V-2 智能屏 App 不依赖 sherpa/ONNX，不下载或运行 KWS/ASR/VAD/TTS 模型。
+- [x] FR-V-3 触发后录制 PCM16/16 kHz/mono；Home Agent 检测到人声后约 700ms 尾部静音自动断句并通知终端释放麦克风。
+- [x] FR-V-4 display 把 PCM 送至已认证的 `home_agent` 语音 WebSocket；ASR/TTS 可在火山流式、本地与 OpenAI provider 间切换，Coding Agent 可选 GLM/Kimi；地址、Key 与模型只配置在服务端，不下发设备。
+- [x] FR-V-5 家长管理后台可查看 ASR/TTS/LLM provider 的归一化状态、主动检测并切换当前 provider；切换有审计且持久化文件不含密钥。
+- [x] FR-V-5 识别文字由服务端 Agent 处理；每轮记录来源 `nodeId`，未显式指定目标时 TTS 只回到来源连接。
+- [x] FR-V-6 手机控制台输入的文字指令走智能屏指令总线；自然语音由 Home Agent 的家庭 Agent 会话处理。
 - [x] FR-V-7 语音状态机（待唤醒 / 手动模式 / 聆听中 / 识别中 / 播报中）实时显示在界面上，并同步到手机端。
 
 ### 2.5 TTS 播报
 
-- [x] FR-T-1 默认使用 edge-tts（微软神经网络语音，免费）播报，`ttsVoice` 默认 `zh-CN-XiaoxiaoNeural`。
-- [x] FR-T-2 edge-tts 失败（如网络不可达）时自动回退系统 TTS：Linux `espeak-ng`、macOS `say`、Windows SAPI（PowerShell `System.Speech`）。
+- [x] FR-T-1 display 播放 `home_agent` 合成并按来源路由的 TTS 音频，不在设备上合成。
+- [x] FR-T-2 TTS 提供方、模型及降级策略属于服务端配置；display 只处理结构化错误并恢复待唤醒状态。
 - [x] FR-T-3 播报音量 `volume`（0..1，默认 0.8）可配置，手机控制台与语音指令均可调节。
 
 ### 2.6 手机控制
@@ -74,13 +87,13 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
 
 - NFR-1 **三平台桌面**：Windows / macOS / Linux，Flutter 3.44+（stable），同一套代码出三个平台的包。
 - NFR-2 **全屏常驻**：启动即全屏；`wakelock_plus` 阻止系统休眠，Linux 额外用 `xset` 关闭屏保/DPMS且每 2 分钟及应用恢复时重申；按 Esc 退出全屏。
-- NFR-3 **零配置可启动**：全部 19 个配置字段有默认值，配置文件缺失或损坏时回落默认值；相册目录不存在时自动创建。
+- NFR-3 **配置兼容**：39 个配置字段均可从旧配置安全回落；display 必须具有有效 `agentUrl/nodeId/roomId/deviceKey` 才进入媒体与语音链路。
 - NFR-4 **失败隔离**：各服务独立初始化，单个失败不影响整体（`apps/smart_frame/lib/main.dart` "各服务独立初始化，单个失败不影响整体"为据）——语音初始化放后台执行，控制台服务器启动失败仅记录日志，应用照常运行。
-- NFR-5 **局域网内工作**：手机控制要求与电脑同一局域网；除天气、ASR、edge-tts 与唤醒词模型首次下载外，全部功能（日历、相册、意图解析、系统 TTS）不依赖互联网。
+- NFR-5 **局域网内工作**：display 与家庭服务器使用局域网 HTTP/WS；原始麦克风 PCM 默认只进入家庭服务器，8790 不暴露公网。
 - NFR-6 **语音链路逐层降级**：
   - 无麦克风权限 → 语音整体不可用，其余功能不受影响；
-  - KWS 模型缺失且后台下载失败 → 手动模式（空格键 / 手机按钮触发）；
-  - ASR 未配置 → 语音回复提示去设置填写 API 地址和密钥，文字指令链路仍可用；
-  - edge-tts 网络失败 → 自动回退系统 TTS。
-- NFR-7 **质量基线**：`flutter analyze` 无问题、`flutter test` 全绿（当前 85 个纯 Dart 单测）才算改动完成。
+  - 服务端 ASR/Agent/TTS 未配置或失败 → display 显示结构化错误并恢复待唤醒，不影响照片/音乐；
+  - 输出路由失败 → 不广播音频到其他设备。
+- NFR-7 **质量基线**：`flutter analyze` 无问题、`flutter test` 全绿（当前 93 个纯 Dart 单测）才算改动完成。
 - NFR-8 **NAS 相册逐层降级**：未启用 / 未配置（`nasRemoteDir` 为空）→ 完全不访问 NAS；连接失败 / 凭据错误 → 静默降级为"本地 + 已缓存 NAS 图"，不弹窗，状态落 `连接失败`，下轮刷新（300 秒）自动重试；单张下载失败 → 跳过该张（视同不存在），不影响轮播。
+- NFR-9 **CCL 单一入口**：相册、Launcher、锁屏视觉层和语音入口复用 `smart_frame`，语音与家庭自动化继续使用仓库既有 home-agent/节点协议，不维护独立 HomeAssist App。

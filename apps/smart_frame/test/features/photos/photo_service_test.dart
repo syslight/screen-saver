@@ -318,6 +318,19 @@ void main() {
     expect(service.cachedFileFor(item)!.path, first.path);
   });
 
+  test('fileForId 可在 NAS 全量列表完成前按索引路径直接下载', () async {
+    final nas = FakeNasSource()..listGate = Completer<List<NasPhotoRef>>();
+    final service = makeService();
+    addTearDown(service.dispose);
+    await service.applyNasConfig(nasConfig(), nas);
+
+    final file = await service.fileForId('/photo/person-sample.jpg');
+
+    expect(file, isNotNull);
+    expect(await file!.readAsBytes(), [1, 2, 3]);
+    expect(nas.downloadCount, 1);
+  });
+
   test('缓存 LRU：超过上限时最久未访问的文件先被删', () async {
     // 预置一个 600B 的旧缓存文件
     final oldFile = File(p.join(cacheDir.path, 'old.jpg'));
@@ -505,6 +518,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(returned, isTrue, reason: 'NAS 不可达时（连接超时 8 秒）启动与设置保存不得被阻塞');
     expect(nas.listCallCount, 1, reason: '刷新应已触发，只是不等待其完成');
+    expect(service.nasStatus, '连接中');
     await done;
 
     // 后台刷新完成后状态照常更新

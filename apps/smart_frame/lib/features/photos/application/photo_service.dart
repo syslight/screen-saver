@@ -290,7 +290,7 @@ class PhotoService extends ChangeNotifier {
     _nas = nas;
     _nasEnabled =
         forceEnabled || (config.nasEnabled && config.nasRemoteDir.isNotEmpty);
-    if (forceEnabled) {
+    if (_nasEnabled) {
       _nasStatus = '连接中';
     } else if (!config.nasEnabled) {
       _nasStatus = '未启用';
@@ -363,6 +363,20 @@ class PhotoService extends ChangeNotifier {
     });
     _downloading[ref.path] = future;
     return future;
+  }
+
+  /// 按稳定照片 ID 取文件。人物确认等索引驱动场景可能早于 NAS 全量列表完成，
+  /// 此时允许直接按索引中的远程路径下载，不必等待数万张照片递归扫描完毕。
+  Future<File?> fileForId(String id) async {
+    for (final item in photos) {
+      if (item.id == id) return fileFor(item);
+    }
+    final local = File(id);
+    if (await local.exists()) return local;
+    final ext = p.extension(id).toLowerCase();
+    final supported = imageExts.contains(ext) || heicExts.contains(ext);
+    if (!_nasEnabled || _nas == null || !supported) return null;
+    return fileFor(PhotoItem.fromNas(NasPhotoRef(path: id, size: 0)));
   }
 
   /// 纯查询缓存是否已存在（不触发下载），UI 同步判断用。

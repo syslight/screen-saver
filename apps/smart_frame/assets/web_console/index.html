@@ -39,6 +39,17 @@
   .search-grid .item { cursor:pointer; }
   .search-grid img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:6px; background:#121417; }
   .search-grid .cap { font-size:11px; color:var(--dim); text-align:center; }
+  .identity-note { color:var(--dim); font-size:12px; line-height:1.5; margin-bottom:10px; }
+  .identity-tabs button.active { background:var(--accent); color:#fff; }
+  .identity-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:10px; margin-top:10px; }
+  .identity-item { background:#171a1f; border:1px solid #2c313a; border-radius:10px; padding:10px; }
+  .identity-head { display:flex; justify-content:space-between; gap:8px; margin-bottom:8px; font-size:12px; color:var(--dim); }
+  .identity-photos { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; margin-bottom:8px; }
+  .identity-photos img { width:100%; aspect-ratio:1; object-fit:cover; border-radius:6px; background:#121417; }
+  .identity-photos .empty { grid-column:1/-1; padding:24px 4px; text-align:center; color:var(--dim); font-size:12px; }
+  .identity-actions { display:flex; gap:6px; }
+  .identity-actions select { min-width:0; flex:1; background:#121417; border:1px solid #333; border-radius:8px; color:var(--fg); padding:10px 8px; font-size:14px; }
+  .identity-actions button { flex:0 0 auto; min-width:64px; padding:10px; font-size:14px; }
 </style>
 </head>
 <body>
@@ -83,6 +94,18 @@
       <button class="secondary" style="flex:0 0 auto" onclick="clearFilter()">全部</button>
     </div>
     <div id="filterResult" class="cfg-result"></div>
+  </div>
+
+  <div class="card">
+    <h2>家庭人物确认</h2>
+    <div class="identity-note">只确认“爷爷、奶奶、哥哥、弟弟”等家庭身份，不保存姓名。确认后，相册故事才会使用该身份；请根据多张代表照片判断。</div>
+    <div class="row identity-tabs">
+      <button id="identity-tab-unconfirmed" class="secondary active" onclick="switchIdentityTab('unconfirmed')">待确认</button>
+      <button id="identity-tab-confirmed" class="secondary" onclick="switchIdentityTab('confirmed')">已确认</button>
+    </div>
+    <div id="identity-result" class="cfg-result"></div>
+    <div id="identity-grid" class="identity-grid"></div>
+    <button id="identity-more" class="secondary" style="display:none;width:100%;margin-top:10px" onclick="loadPersonProfiles(true)">加载更多</button>
   </div>
 
   <div class="card">
@@ -391,6 +414,142 @@ async function clearFilter() {
 }
 
 document.getElementById('filterInput').addEventListener('keydown', e => { if (e.key === 'Enter') applyFilter(); });
+
+// ===== 家庭人物确认（人脸聚类只由家长赋关系称谓）=====
+let identityStatus = 'unconfirmed';
+let identityOffset = 0;
+let identityTotal = 0;
+let identityLabels = [];
+
+function switchIdentityTab(status) {
+  identityStatus = status;
+  document.getElementById('identity-tab-unconfirmed').classList.toggle('active', status === 'unconfirmed');
+  document.getElementById('identity-tab-confirmed').classList.toggle('active', status === 'confirmed');
+  loadPersonProfiles(false);
+}
+
+async function loadPersonProfiles(append) {
+  if (!append) {
+    identityOffset = 0;
+    document.getElementById('identity-grid').replaceChildren();
+  }
+  const result = document.getElementById('identity-result');
+  result.className = 'cfg-result';
+  result.textContent = '读取人物聚类中…';
+  try {
+    const r = await fetch('/api/index/person-profiles?status=' + identityStatus + '&limit=12&offset=' + identityOffset);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    identityTotal = d.total || 0;
+    identityLabels = d.allowedIdentityLabels || identityLabels;
+    const profiles = d.profiles || [];
+    profiles.forEach(renderPersonProfile);
+    identityOffset += profiles.length;
+    result.textContent = identityTotal
+      ? `已显示 ${identityOffset} / ${identityTotal} 个${identityStatus === 'confirmed' ? '已确认' : '待确认'}人物聚类`
+      : (identityStatus === 'confirmed' ? '还没有已确认的人物' : '没有待确认的人物聚类');
+    document.getElementById('identity-more').style.display = identityOffset < identityTotal ? 'block' : 'none';
+  } catch (e) {
+    result.className = 'cfg-result err';
+    result.textContent = '人物聚类读取失败：' + e;
+  }
+}
+
+function renderPersonProfile(profile) {
+  const item = document.createElement('div');
+  item.className = 'identity-item';
+  item.dataset.subject = profile.subjectName;
+
+  const head = document.createElement('div');
+  head.className = 'identity-head';
+  const subject = document.createElement('span');
+  subject.textContent = profile.subjectName;
+  const count = document.createElement('span');
+  count.textContent = (profile.photoCount || 0) + ' 张照片';
+  head.append(subject, count);
+
+  const photos = document.createElement('div');
+  photos.className = 'identity-photos';
+  const samples = profile.samplePhotoIds || [];
+  if (!samples.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '暂无可预览照片';
+    photos.append(empty);
+  } else {
+    samples.forEach((id, index) => {
+      const img = document.createElement('img');
+      img.loading = 'lazy';
+      img.alt = '人物人脸样本';
+      const faceId = (profile.sampleFaceIds || [])[index];
+      img.src = faceId
+        ? '/api/index/person-face?id=' + encodeURIComponent(faceId)
+        : '/api/photos/file?id=' + encodeURIComponent(id);
+      img.onerror = () => {
+        img.remove();
+        const remaining = photos.querySelectorAll('img').length;
+        photos.style.gridTemplateColumns = `repeat(${Math.max(1, remaining)}, 1fr)`;
+      };
+      photos.append(img);
+    });
+  }
+
+  const actions = document.createElement('div');
+  actions.className = 'identity-actions';
+  const select = document.createElement('select');
+  const prompt = document.createElement('option');
+  prompt.value = '';
+  prompt.textContent = '选择家庭身份';
+  select.append(prompt);
+  identityLabels.forEach(label => {
+    const option = document.createElement('option');
+    option.value = label;
+    option.textContent = label;
+    option.selected = label === profile.identityLabel;
+    select.append(option);
+  });
+  const save = document.createElement('button');
+  save.textContent = profile.confirmed ? '修改' : '确认';
+  save.onclick = () => savePersonIdentity(profile.subjectName, select.value);
+  actions.append(select, save);
+  if (profile.confirmed) {
+    const clear = document.createElement('button');
+    clear.className = 'secondary';
+    clear.textContent = '撤销';
+    clear.onclick = () => savePersonIdentity(profile.subjectName, null);
+    actions.append(clear);
+  }
+  item.append(head, photos, actions);
+  document.getElementById('identity-grid').append(item);
+}
+
+async function savePersonIdentity(subjectName, identityLabel) {
+  const result = document.getElementById('identity-result');
+  if (identityLabel === '') {
+    result.className = 'cfg-result err';
+    result.textContent = '请先选择家庭身份';
+    return;
+  }
+  result.className = 'cfg-result';
+  result.textContent = '保存中…';
+  try {
+    const r = await fetch('/api/index/person-profile', {
+      method: 'POST',
+      headers: {'content-type': 'application/json'},
+      body: JSON.stringify({subjectName, identityLabel}),
+    });
+    const d = await r.json();
+    if (!r.ok || !d.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    await loadPersonProfiles(false);
+    result.className = 'cfg-result ok';
+    result.textContent = identityLabel ? `已将 ${subjectName} 确认为“${identityLabel}”` : `已撤销 ${subjectName} 的身份`;
+  } catch (e) {
+    result.className = 'cfg-result err';
+    result.textContent = '保存失败：' + e;
+  }
+}
+
+loadPersonProfiles(false);
 </script>
 </body>
 </html>

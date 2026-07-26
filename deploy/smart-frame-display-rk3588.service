@@ -1,0 +1,31 @@
+[Unit]
+Description=Smart Frame thin display (RK3588)
+After=graphical-session.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=%h/.Xauthority
+Environment=XDG_RUNTIME_DIR=%t
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+Environment=LANG=zh_CN.UTF-8
+Environment=LC_ALL=zh_CN.UTF-8
+Environment=LD_LIBRARY_PATH=/opt/smart-frame/mesa-lib
+Environment=__EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+Environment=LIBGL_ALWAYS_SOFTWARE=true
+Environment=MESA_LOADER_DRIVER_OVERRIDE=llvmpipe
+Environment=FLUTTER_ENGINE_SWITCHES=1
+Environment=FLUTTER_ENGINE_SWITCH_1=enable-software-rendering=true
+ExecStartPre=-/usr/bin/xscreensaver-command -exit
+ExecStartPre=/usr/bin/xrandr --size 1280x720
+ExecStartPre=/usr/bin/xset s off -dpms
+WorkingDirectory=%h/.local/opt/smart-frame/current
+ExecStart=%h/.local/opt/smart-frame/current/smart_frame
+Restart=always
+RestartSec=3
+StandardOutput=append:%h/.local/share/com.example.smart_frame/smart-frame.log
+StandardError=append:%h/.local/share/com.example.smart_frame/smart-frame.log
+
+[Install]
+WantedBy=default.target

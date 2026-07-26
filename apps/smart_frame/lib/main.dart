@@ -11,6 +11,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:smart_frame/core/config/app_config.dart';
 import 'package:smart_frame/features/remote_control/data/control_server.dart';
 import 'package:smart_frame/features/remote_control/application/command_service.dart';
+import 'package:smart_frame/features/music/application/music_service.dart';
+import 'package:smart_frame/features/music/data/remote_music_source.dart';
 import 'package:smart_frame/features/photos/data/http_photo_source.dart';
 import 'package:smart_frame/features/photos/application/photo_index_service.dart';
 import 'package:smart_frame/features/photos/data/nas_photo_source.dart';
@@ -19,10 +21,8 @@ import 'package:smart_frame/core/platform/screen_awake_service.dart';
 import 'package:smart_frame/features/weather/application/weather_service.dart';
 import 'package:smart_frame/features/dashboard/presentation/dashboard_page.dart';
 import 'package:smart_frame/features/setup/presentation/android_setup_page.dart';
-import 'package:smart_frame/features/voice/application/asr_client.dart';
 import 'package:smart_frame/features/voice/application/tts_service.dart';
 import 'package:smart_frame/features/voice/application/voice_client.dart';
-import 'package:smart_frame/features/voice/application/voice_pipeline.dart';
 import 'package:smart_frame/features/voice/application/voice_provider.dart';
 
 Future<void> main() async {
@@ -34,7 +34,13 @@ Future<void> main() async {
   await configService.load();
   if (Platform.isAndroid) {
     configService.config.serverRole = 'display';
-    if (!validComputeNodeUrl(configService.config.computeNodeUrl)) {
+    const provisionedAgentUrl = String.fromEnvironment('SMART_FRAME_AGENT_URL');
+    if (!validAgentUrl(configService.config.agentUrl) &&
+        validAgentUrl(provisionedAgentUrl)) {
+      configService.config.agentUrl = normalizeAgentUrl(provisionedAgentUrl);
+      await configService.save();
+    }
+    if (!validDisplayNodeConfig(configService.config)) {
       runApp(
         AndroidSetupApp(
           configService: configService,
@@ -55,11 +61,15 @@ Future<void> _startSmartFrame(ConfigService configService) async {
 
   // 检测系统 heif-convert（HEIC 解码依赖；Android 无此工具，display 照片已由计算端转 jpg）
   if (!Platform.isAndroid) await PhotoService.detectHeifConvert();
-  // 节点角色：compute 直连 NAS + 本地 SQLite；display 从 computeNodeUrl 拉照片/索引
+  // display 是薄客户端：照片、索引、音乐和语音 Agent 都由 home_agent 提供。
   final isDisplay = config.serverRole == 'display';
   // NAS 图源：按配置建客户端；缓存目录放在应用支持目录下
   final NasSource nasSource = isDisplay
-      ? HttpPhotoSource(config.computeNodeUrl)
+      ? HttpPhotoSource(
+          config.agentUrl,
+          nodeId: config.nodeId,
+          deviceKey: config.deviceKey,
+        )
       : (NasPhotoSource()..configure(
           url: config.nasWebdavUrl,
           user: config.nasWebdavUser,
@@ -69,14 +79,16 @@ Future<void> _startSmartFrame(ConfigService configService) async {
   final photos = PhotoService(
     config.photoDir,
     cacheDir: p.join(configService.supportDir, 'nas-cache'),
+    cacheLimitBytes: Platform.isAndroid
+        ? 96 * 1024 * 1024
+        : PhotoService.defaultCacheLimitBytes,
     playbackStatePath: p.join(configService.supportDir, 'slideshow_state.json'),
   )..heicEnabled = config.heicEnabled;
   final weather = WeatherService(city: config.city);
-  final tts = TtsService(voice: config.ttsVoice, volume: config.volume);
-  final asr = AsrClient(
-    baseUrl: config.asrBaseUrl,
-    apiKey: config.asrApiKey,
-    model: config.asrModel,
+  final tts = TtsService(
+    voice: config.ttsVoice,
+    volume: config.volume,
+    synthesisEnabled: !isDisplay,
   );
   final commands = CommandService(
     config: config,
@@ -84,25 +96,23 @@ Future<void> _startSmartFrame(ConfigService configService) async {
     weather: weather,
     tts: tts,
   );
-  // C/S：compute 跑 VoicePipeline（KWS/ASR/TTS，external WS 服务 ARM）；
-  // display 用 VoiceClient（record→WS，收 state/TTS→播），不跑模型。
-  final StreamController<Uint8List>? ttsController;
-  final VoicePipeline? voice;
+  // 智能屏只上传麦克风 PCM 并播放服务端 TTS，不在 App 内运行 KWS/ASR/VAD/LLM/TTS。
   final VoiceProvider voiceProvider;
-  if (isDisplay) {
-    voice = null;
-    ttsController = null;
-    voiceProvider = VoiceClient(config.computeNodeUrl);
-  } else {
-    voice = VoicePipeline(
-      config: config,
-      tts: tts,
-      asr: asr,
-      onText: commands.executeText,
+  if (config.agentUrl.isNotEmpty &&
+      config.nodeId.isNotEmpty &&
+      config.roomId.isNotEmpty &&
+      config.deviceKey.isNotEmpty) {
+    voiceProvider = VoiceClient(
+      agentUrl: config.agentUrl,
+      nodeId: config.nodeId,
+      roomId: config.roomId,
+      deviceKey: config.deviceKey,
+      volume: config.volume,
     );
-    ttsController = StreamController<Uint8List>();
-    voice.startExternal(ttsController);
-    voiceProvider = voice;
+  } else {
+    voiceProvider = UnavailableVoiceProvider(
+      '未配置 Home Agent 节点凭据，语音功能不可用',
+    );
   }
   commands.voiceStateText = () => voiceProvider.stateText;
   commands.onListenRequested = voiceProvider.triggerListen;
@@ -113,19 +123,37 @@ Future<void> _startSmartFrame(ConfigService configService) async {
   await photos.applyNasConfig(config, nasSource, forceEnabled: isDisplay);
   photos.startSlideshow(config.slideshowSeconds);
   weather.start(refreshMinutes: config.weatherRefreshMinutes);
-  if (isDisplay) {
-    unawaited((voiceProvider as VoiceClient).init());
-  } else {
-    unawaited(voice!.init());
+  if (voiceProvider is VoiceClient) {
+    unawaited(voiceProvider.init());
   }
 
   // 照片索引/去重服务：compute 读本地 SQLite（守护进程写），display 走 HTTP
   final photoIndexBackend = isDisplay
-      ? HttpIndexBackend(config.computeNodeUrl)
+      ? HttpIndexBackend(
+          config.agentUrl,
+          nodeId: config.nodeId,
+          deviceKey: config.deviceKey,
+        )
       : SqliteIndexBackend(p.join(configService.supportDir, 'photo_index.db'));
   final photoIndex = PhotoIndexService(photos, photoIndexBackend);
   await photoIndex.init(config);
   commands.photoIndex = photoIndex; // 筛选播放（语音/控制台「放猫的」）
+
+  final music = MusicService(
+    configService: configService,
+    photoIndex: photoIndex,
+    remoteSource: isDisplay
+        ? RemoteMusicSource(
+            baseUrl: config.agentUrl,
+            nodeId: config.nodeId,
+            deviceKey: config.deviceKey,
+            cacheDir: p.join(configService.supportDir, 'music-cache'),
+          )
+        : null,
+  );
+  await music.init();
+  music.bindVoice(voiceProvider);
+  commands.music = music;
 
   final indexHtml = await rootBundle.loadString(
     'assets/web_console/index.html',
@@ -138,8 +166,6 @@ Future<void> _startSmartFrame(ConfigService configService) async {
     configService: configService,
     nas: nasSource,
     photoIndex: photoIndex,
-    voice: isDisplay ? null : voice,
-    ttsController: ttsController,
   );
   if (!isDisplay) {
     try {
@@ -154,7 +180,7 @@ Future<void> _startSmartFrame(ConfigService configService) async {
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   } else {
-    unawaited(windowManager.setFullScreen(true));
+    await windowManager.setFullScreen(true);
   }
 
   runApp(
@@ -166,8 +192,8 @@ Future<void> _startSmartFrame(ConfigService configService) async {
         ChangeNotifierProvider.value(value: voiceProvider),
         ChangeNotifierProvider.value(value: commands),
         ChangeNotifierProvider.value(value: photoIndex),
+        ChangeNotifierProvider.value(value: music),
         Provider.value(value: tts),
-        Provider.value(value: asr),
         Provider.value(value: nasSource),
         Provider.value(value: server),
       ],

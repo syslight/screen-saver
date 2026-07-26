@@ -9,7 +9,7 @@
 Monorepo 当前包含 Flutter 全屏智能屏，以及独立的家庭 Agent 基础设施。智能屏目标平台
 Windows / macOS / Linux / Android，包名 `smart_frame`，Flutter 3.44+（stable）；家庭 Agent
 使用 Python 3.12 + uv，通过版本化 HTTP/WebSocket 协议连接 Linux/Android 房间节点；
-`apps/student/` 是独立的 Flutter Android 学生作业端。
+`apps/student/` 是独立的 Flutter Android 学生作业端，`apps/parent/` 是独立的家长控制端。
 
 ## 构建与命令
 
@@ -22,13 +22,19 @@ flutter analyze
 flutter test
 flutter run -d linux
 flutter build linux|windows|macos --release   # 出包在 build/<平台>/.../release/ 下
-flutter build apk --release                   # Android arm64 展示端
+flutter build apk --release --split-per-abi   # Android ARMv7/arm64 展示端
 
 cd ../student
 flutter pub get
 flutter analyze
 flutter test
 flutter build apk --debug                     # 独立学生端 APK
+
+cd ../parent
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug                     # 独立家长控制端 APK
 ```
 
 ### 代理坑
@@ -69,8 +75,9 @@ apps/
     assets/web_console/       手机控制台单页（原生 JS，打包进 assets）
     test/                     与 core/features 镜像组织的 11 个 Dart 测试文件
   student/                    独立 Flutter Android 学生端；设备配对、作业、拍照提交和审核结果
+  parent/                     独立 Flutter Android 家长端；局域网直连、云绑定和 Home Hub 控制
 services/
-  home_agent/                 家庭 Agent Server + Linux Room Node；独立 uv 环境、SQLite 和 Alembic 迁移
+  home_agent/                 edge/cloud Agent + Linux Room Node + Home Hub Connector；独立 uv 环境
     src/home_agent/web/parent/ 家长作业中心静态单页
   photo_indexer/              照片索引守护进程（dinov2/CLIP/insightface/VLM）
 packages/node_protocol/       节点协议 Dart 模型、共享 canonical fixtures 与合约测试
@@ -84,21 +91,24 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 
 - **改代码后必须验证**：智能屏改动需 `flutter analyze` 无问题且 `flutter test` 全绿；
   `services/home_agent/` 改动还必须执行 `uv run ruff check .`、`uv run ruff format --check .`、
-  `uv run mypy src`、`uv run pytest --cov=home_agent --cov=linux_room_node`；
-  `apps/student/` 改动执行其目录下的 `flutter analyze`、`flutter test`，涉及 Android 插件或
+  `uv run mypy src`、`uv run pytest --cov=home_agent --cov=linux_room_node --cov=home_hub_connector`；
+  `apps/student/`、`apps/parent/` 改动执行各自目录下的 `flutter analyze`、`flutter test`，涉及 Android 插件或
   manifest 时还要构建 APK；`packages/node_protocol/` 改动执行 `dart analyze` 与 `dart test`。
   各语言/包边界互不代替验收。
-- **指令统一入口**：现状——手机 WS 指令与语音意图统一经 `CommandService`（`apps/smart_frame/lib/features/remote_control/application/command_service.dart`）总线处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为直连服务的历史实现（`apps/smart_frame/lib/features/dashboard/presentation/dashboard_page.dart`：←/→ 直连 `PhotoService`、空格直连 `VoicePipeline.triggerListen`，不经总线、不触发广播）。规范——新增指令应接入 `CommandService` 总线，不得绕过它直接操作服务，以便状态广播到全部手机端。
+- **指令统一入口**：现状——手机 WS 指令统一经 `CommandService`（`apps/smart_frame/lib/features/remote_control/application/command_service.dart`）总线处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为直连服务的历史实现（`apps/smart_frame/lib/features/dashboard/presentation/dashboard_page.dart`：←/→ 直连 `PhotoService`、空格调用当前 `VoiceProvider.triggerListen`，不经总线、不触发广播）。规范——新增指令应接入 `CommandService` 总线，不得绕过它直接操作服务，以便状态广播到全部手机端。
 - **改了就要同步文档**：
   - 目录结构 / 构建命令 → README.md（「运行与构建」「架构速览」）+ 本文件对应章节
   - 协议字段（以 `apps/smart_frame/lib/features/remote_control/domain/protocol.dart` 为准）→ `docs/protocol.md` + 本文件相关描述 + `apps/smart_frame/test/features/remote_control/protocol_test.dart`
-  - 语音链路（`apps/smart_frame/lib/features/voice/application/`，含意图解析、状态机、KWS/ASR/TTS 行为）→ `docs/voice-pipeline.md`
+  - 语音链路（Android 原生唤醒桥、`VoiceClient`、Home Agent 服务端 VAD/ASR/TTS）→ `docs/voice-pipeline.md`
   - 配置项（以 `apps/smart_frame/lib/core/config/app_config.dart` 为准）→ README.md「配置」+ 本文件「配置」表格
 - **规格与计划**：规格文档落 `docs/superpowers/specs/`，计划落 `docs/superpowers/plans/`。
 - **家庭 Agent 协议**：以 `services/home_agent/src/home_agent/protocol/` 和共享 fixture 为准；改字段时同步
   `docs/home-agent-protocol.md`、Python 合约测试与 `packages/node_protocol/` Dart 合约测试。
 - **学生权限边界**：学生端必须使用独立 `Student` device key，不能保存或复用家长 bearer；
   学生任务响应不得包含 `referenceAnswer`、`rubric` 或其他孩子信息。更换孩子必须撤销后重配。
+- **家长端认证边界**：家长端 bearer 只能存 `flutter_secure_storage`，不得写普通偏好设置或日志；
+  可信局域网由家长登录后直连同主机 8780；外网只能连接 HTTPS Cloud Control，通过节点能力路由
+  到 Home Hub。家庭 8780/8790 不得暴露公网，云端不得增加原始家庭音视频转发命令。
 - 本项目是 git 仓库，托管在 GitHub 私有仓库 `screen-saver`；`git commit` / `push` 等变更操作必须先经用户确认，不要自动执行。
 - **提交规范**：获得用户确认后，commit 必须遵守 [docs/commit-convention.md](docs/commit-convention.md)：标题说明提交目的，正文必须写清“要做什么 / 做了什么 / 负面影响 / Review 重点 / 验证”。不得用 `update`、`fix bug` 等无法审计的模糊描述。
 
@@ -113,7 +123,7 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 
 ## 配置
 
-配置文件：`~/.local/share/com.example.smart_frame/config.json`（Linux；其他平台为对应的应用支持目录）。全部字段有默认值，零配置可启动，也可在应用内按 **S** 修改。共 19 个字段：
+配置文件：`~/.local/share/com.example.smart_frame/config.json`（Linux；其他平台为对应的应用支持目录）。共 39 个字段。CCL/3588 使用 `display` 角色和服务端签发的节点凭据；旧的本地计算字段只用于历史 `compute` 兼容模式：
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -122,13 +132,20 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 | `serverPort` | `8780` | 手机控制台端口 |
 | `slideshowSeconds` | `10` | 相册轮播间隔（秒） |
 | `weatherRefreshMinutes` | `30` | 天气刷新间隔（分钟） |
-| `listenSeconds` | `5` | 唤醒后聆听时长（秒） |
-| `asrBaseUrl` | `https://api.openai.com/v1` | OpenAI 兼容 Whisper API（可指向 Groq 等） |
-| `asrApiKey` | 空 | ASR API Key；未配置时语音链路自动降级 |
-| `asrModel` | `whisper-1` | ASR 模型名 |
-| `ttsVoice` | `zh-CN-XiaoxiaoNeural` | edge-tts 语音名 |
+| `listenSeconds` | `5` | 旧配置兼容字段；当前服务端自动断句，不使用固定录音时长 |
+| `asrBaseUrl` | `https://api.openai.com/v1` | 旧配置兼容字段；当前 ASR 只在 Home Agent 配置 |
+| `asrApiKey` | 空 | 旧配置兼容字段；不得用于智能屏 App |
+| `asrModel` | `whisper-1` | 旧配置兼容字段；当前 ASR 模型由 Home Agent 选择 |
+| `ttsVoice` | `zh-CN-XiaoxiaoNeural` | 仅历史 compute 模式使用；display 不合成 TTS |
 | `volume` | `0.8` | 播报音量 0..1 |
-| `wakeWordModelDir` | 空 → 支持目录/`kws-model` | sherpa-onnx KWS 唤醒词模型目录 |
+| `musicEnabled` | `true` | 是否播放相册背景音乐 |
+| `musicMuted` | `false` | 是否将背景音乐静音 |
+| `musicVolume` | `0.55` | 背景音乐独立音量 0..1 |
+| `musicDir` | 空 → 支持目录/`music` | 仅 compute 兼容模式；display 从服务端曲库拉取缓存 |
+| `musicOutputEnabled` | 新配置 `true`；已有 split 配置按角色迁移 | 当前节点是否真正输出音乐；compute=false、display=true |
+| `musicQuietStartHour` | `22` | 夜间自动静音开始小时 |
+| `musicQuietEndHour` | `8` | 夜间自动静音结束小时 |
+| `wakeWordModelDir` | 空 → 支持目录/`kws-model` | 旧配置兼容字段；App 不加载或下载 KWS 模型 |
 | `nasEnabled` | `false` | 是否启用 NAS 相册来源 |
 | `nasWebdavUrl` | `http://192.168.1.22:5005` | NAS WebDAV 地址 |
 | `nasWebdavUser` | 空 | NAS WebDAV 账号 |
@@ -137,27 +154,35 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 | `nasFilterEnabled` | `true` | NAS 截图规则过滤开关（仅作用于 NAS 来源） |
 | `nasFilterKeywords` | `['截图', 'screenshot', '屏幕快照', '收集']` | NAS 过滤关键词（路径含关键词即排除，大小写不敏感，替换语义） |
 | `nasFilterMinBytes` | `30720` | NAS 过滤：小于此字节数的文件视为缩略图/图标排除（0=不限） |
-| `dedupEnabled` | `true` | 是否启用内容级去重（sha256 完全重复 + dHash 近似重复），播放跳过 |
+| `dedupEnabled` | `true` | 仅 compute 兼容模式；display 使用服务端去重结果 |
 | `dedupPHashThreshold` | `5` | dHash 海明距离 ≤ 此值视为近似重复（0-64，越小越严格） |
 | `heicEnabled` | `true` | 是否支持 HEIC/HEIF（需系统 `heif-convert`，不可用时自动降级跳过） |
 | `vlmEnabled` | `false` | 是否启用 VLM（ollama 视觉模型）打标签 + 非照片判定（重，默认关） |
 | `vlmModel` | `minicpm-v` | ollama 视觉模型名（minicpm-v / llama3.2-vision / llava 等） |
 | `ollamaUrl` | `http://localhost:11434` | ollama API 地址 |
+| `serverRole` | `compute` | 节点角色；CCL/3588 部署必须设为 `display` |
+| `computeNodeUrl` | 空 | 历史 split 直连地址；新 display 不使用 |
+| `agentUrl` | 空 | `home_agent` 地址，CCL/3588 通常为局域网 `http://host:8790` |
+| `nodeId` | 空 | 服务端签发的独立节点 ID |
+| `roomId` | 空 | 节点所属房间 ID |
+| `deviceKey` | 空 | 节点设备密钥，不得打印或提交 |
 
 ## 测试地图
 
-`flutter test` 共 85 个用例，全部是纯 Dart 单测（无 widget 测试）：
+`flutter test` 共 95 个用例，全部是纯 Dart 单测（无 widget 测试）：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
 | `apps/smart_frame/test/core/config/app_config_test.dart` | 3 | AppConfig NAS 字段：默认值、`fromJson({})` 回落默认、toJson/fromJson 往返逐字段相等 |
-| `apps/smart_frame/test/features/setup/android_setup_page_test.dart` | 2 | Android 计算节点 URL 校验与规范化 |
+| `apps/smart_frame/test/features/setup/android_setup_page_test.dart` | 2 | Android Agent URL 校验与规范化 |
 | `apps/smart_frame/test/features/calendar/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
-| `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 17 | 控制台页 GET /、照片说明端点参数/404/已确认家庭身份字段、WS 连接即发状态快照（含 `nas` 字段）、指令执行与事件/状态广播、文字指令走意图解析、音量设置、multipart 上传照片（含非图片拒绝）、非法 WS 消息容错、NAS 配置端点（GET 读取不含密码、POST 保存密码空=不改、POST test 不可达 ok:false）、保存后 nas 状态广播、筛选参数校验与清除 |
+| `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 20 | 控制台页、照片/人物 API、WS 状态与指令广播、TTS 与音乐独立音量、上传、NAS 配置和筛选 |
+| `apps/smart_frame/test/features/music/music_service_test.dart` | 2 | 跨午夜夜间静音与音乐/TTS ducking |
+| `apps/smart_frame/test/features/voice/native_wake_word_test.dart` | 2 | Android 原生唤醒可用状态与唤醒事件解析 |
 | `apps/smart_frame/test/features/voice/intent_parser_test.dart` | 10 | `parseIntent`：天气 / 时间 / 日期 / 农历 / 照片切换 / 音量 / 播报 / 语义筛选与清除 / 其他（显示二维码、帮助、未知）/ 带标点结尾 |
 | `apps/smart_frame/test/features/photos/nas_filter_test.dart` | 8 | `nasPhotoAllowed`：关键词命中路径任意段排除（大小写不敏感）、内置截图文件名正则、普通照片放行、`enabled=false` 全放行、keywords 替换语义、空串关键词跳过、`@eaDir` 段排除、小文件（size<minBytes）排除 |
 | `apps/smart_frame/test/features/photos/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器（`dart:io HttpServer`）端到端：ping + 递归列出（截图被过滤且计入 `lastFilteredCount`）、downloadTo 写盘长度正确、401 时 ping 抛异常、未 configure/remoteDir 空返回空 |
-| `apps/smart_frame/test/features/photos/photo_service_test.dart` | 23 | `PhotoService`：本地+NAS 混合列表与缓存、故障降级、轮播/筛选/hidden 行为、按照片 ID 持久化恢复位置、等待 NAS 首次列表后恢复、display 强制拉取 HTTP 图源 |
-| `apps/smart_frame/test/features/photos/photo_index_service_test.dart` | 6 | `PhotoIndexService`：读库 hidden/status、标签/人物筛选、照片路径时间与地点推断、索引时间/标签到文字解说、只返回家长确认的身份 |
+| `apps/smart_frame/test/features/photos/photo_service_test.dart` | 24 | `PhotoService`：本地+NAS 混合列表与缓存、索引 ID 在 NAS 全量列表完成前直接下载、故障降级、轮播/筛选/hidden 行为、按照片 ID 持久化恢复位置、等待 NAS 首次列表后恢复、display 强制拉取 HTTP 图源 |
+| `apps/smart_frame/test/features/photos/photo_index_service_test.dart` | 8 | `PhotoIndexService`：读库 hidden/status、标签/人物筛选、人物档案分页/确认/撤销/不存在聚类、照片路径时间与地点推断、索引时间/标签到文字解说、只返回家长确认的身份 |
 | `apps/smart_frame/test/features/remote_control/protocol_test.dart` | 5 | `decodeCommand`（合法、带参数、非法输入抛 `FormatException`）、`encodeState`、`encodeEvent` |
 | `apps/smart_frame/test/features/weather/weather_service_test.dart` | 2 | `weatherCodeText` 天气码文案、`weatherFromJson` 解析 Open-Meteo 响应 |

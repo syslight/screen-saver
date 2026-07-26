@@ -1,0 +1,91 @@
+{
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "libraryPolicyUrl": "https://www.scottbuckley.com.au/library/using-this-music/",
+  "tracks": [
+    {
+      "mood": "warm",
+      "title": "Amberlight",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/amberlight/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2025/03/Amberlight.mp3"
+    },
+    {
+      "mood": "warm",
+      "title": "Simplicity",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/simplicity/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2024/03/Simplicity.mp3"
+    },
+    {
+      "mood": "childhood",
+      "title": "Childhood",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/childhood/",
+      "downloadUrl": "http://www.scottbuckley.com.au/library/wp-content/uploads/2019/01/sb_childhood.mp3"
+    },
+    {
+      "mood": "childhood",
+      "title": "Wonderful",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/wonderful/",
+      "downloadUrl": "http://www.scottbuckley.com.au/wp-content/audio/sb_wonderful.mp3"
+    },
+    {
+      "mood": "journey",
+      "title": "Journeys",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/journeys/",
+      "downloadUrl": "http://www.scottbuckley.com.au/library/wp-content/uploads/2016/09/sb_journeys.mp3"
+    },
+    {
+      "mood": "journey",
+      "title": "Soar",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/soar/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2019/12/sb_soar.mp3"
+    },
+    {
+      "mood": "memory",
+      "title": "Moonlight",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/moonlight/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2022/07/Moonlight.mp3"
+    },
+    {
+      "mood": "memory",
+      "title": "With These Hands",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/with-these-hands/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2026/06/WithTheseHands.mp3"
+    },
+    {
+      "mood": "celebration",
+      "title": "Happiness",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/happiness/",
+      "downloadUrl": "http://www.scottbuckley.com.au/wp-content/audio/sb_happiness.mp3"
+    },
+    {
+      "mood": "celebration",
+      "title": "Tomorrow",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/tomorrow/",
+      "downloadUrl": "http://www.scottbuckley.com.au/wp-content/audio/sb_tomorrow.mp3"
+    },
+    {
+      "mood": "calm",
+      "title": "Sleep",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/sleep/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2019/08/sb_sleep.mp3"
+    },
+    {
+      "mood": "calm",
+      "title": "First Snow",
+      "artist": "Scott Buckley",
+      "sourcePage": "https://www.scottbuckley.com.au/library/first-snow/",
+      "downloadUrl": "https://www.scottbuckley.com.au/library/wp-content/uploads/2022/12/FirstSnow.mp3"
+    }
+  ]
+}

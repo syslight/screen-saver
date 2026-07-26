@@ -10,10 +10,14 @@ import 'package:web_socket_channel/io.dart';
 
 /// TTS 播报：优先 edge-tts（微软神经网络语音，免费），失败回退系统 TTS。
 class TtsService {
-  TtsService({this.voice = 'zh-CN-XiaoxiaoNeural', double volume = 0.8})
-    : _volume = volume.clamp(0.0, 1.0).toDouble();
+  TtsService({
+    this.voice = 'zh-CN-XiaoxiaoNeural',
+    double volume = 0.8,
+    this.synthesisEnabled = true,
+  }) : _volume = volume.clamp(0.0, 1.0).toDouble();
 
   String voice;
+  final bool synthesisEnabled;
 
   // 懒加载：无 Flutter 绑定（单元测试）时也能构造 TtsService
   AudioPlayer? _playerInstance;
@@ -35,11 +39,15 @@ class TtsService {
   /// 合成语音返回 mp3 字节（不播放）。C/S 模式下由调用方推给 ARM 播。
   Future<Uint8List> synthesize(String text) async {
     if (text.trim().isEmpty) return Uint8List(0);
+    if (!synthesisEnabled) {
+      throw StateError('展示端不执行 TTS 合成');
+    }
     return _edgeTts(text).timeout(const Duration(seconds: 20));
   }
 
   Future<void> speak(String text) async {
     if (text.trim().isEmpty) return;
+    if (!synthesisEnabled) return;
     try {
       final bytes = await synthesize(text);
       await _player.setVolume(_volume);

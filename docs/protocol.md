@@ -19,6 +19,9 @@
 | `GET /api/photos/list` | 展示节点读取照片列表 | `photos[]` 含 `id` / `name` / `isNas` / `modifiedAt`，见第 6 章 |
 | `GET /api/photos/file?id=` | 展示节点读取照片字节 | 本地或 NAS 缓存统一返回图片字节，见第 6 章 |
 | `GET /api/index/description?id=` | 展示节点读取照片说明 | 时间、地点、文字解说，见第 6 章 |
+| `GET /api/index/person-profiles` | 分页读取人物聚类 | 家长身份确认入口，见第 6 章 |
+| `POST /api/index/person-profile` | 确认或撤销家庭身份 | 只接受预置关系称谓，见第 6 章 |
+| `GET /api/index/person-face?id=` | 读取人物人脸裁剪预览 | 仅用于家长确认，见第 6 章 |
 
 要点：
 
@@ -46,7 +49,7 @@ WS 文本帧，JSON 对象：
 
 ### action 全表
 
-以 `CommandService.executeCommand` 的 switch 分支（`command_service.dart:47-84`）为准，共 9 个。注意 `protocol.dart` 的注释里漏了 `hide_qr`，**以代码为准**：
+以 `CommandService.executeCommand` 的 switch 分支为准，共 12 个：
 
 | action | 参数 | 效果 | 广播的 event 消息 |
 |---|---|---|---|
@@ -54,11 +57,14 @@ WS 文本帧，JSON 对象：
 | `prev_photo` | 无 | 相册切到上一张（`photos.prev()`） | `已切到上一张` |
 | `refresh_weather` | 无 | 立即刷新天气（`weather.refresh()`） | `天气已刷新` / `天气刷新失败` |
 | `set_volume` | `value`：0..1，缺省保持当前 | 设置播报音量（clamp 到 0..1）并写入配置 | `音量 50%`（百分比取整） |
+| `set_music_enabled` | `value`：0/1 | 暂停或播放相册背景音乐 | `背景音乐已暂停` / `背景音乐已播放` |
+| `set_music_muted` | `value`：0/1 | 关闭或打开背景音乐声音 | `背景音乐已静音` / `背景音乐声音已打开` |
+| `set_music_volume` | `value`：0..1 | 设置背景音乐独立音量 | `音乐音量 55%` |
 | `announce` | `text`：播报内容 | 经 TTS 播报该文本；`text` 为空不播报 | `播报：<text>` / `播报内容为空` |
 | `text_command` | `text`：自然语言指令 | 走本地意图解析（`executeText` = `parseIntent` → `executeIntent`），与语音 ASR 结果同一入口 | 意图的中文回复文字，如 `现在时间是 15 点 30 分。` |
 | `show_qr` | 无 | 屏幕显示控制台二维码浮层 | `二维码已显示` |
 | `hide_qr` | 无 | 隐藏二维码浮层 | `二维码已隐藏` |
-| `listen` | 无 | 触发一次语音聆听（经 `onListenRequested` 回调到 `VoicePipeline.triggerListen`） | `开始聆听` |
+| `listen` | 无 | 触发一次语音聆听（经 `onListenRequested` 回调到当前 `VoiceProvider.triggerListen`） | `开始聆听` |
 | 其他任意值 | — | 不执行任何操作，不报错 | `未知指令: <action>` |
 
 除 `text_command` 外的指令（含未知 action）执行后，服务器先广播一条 event（上表消息），再广播一条 state 快照（`command_service.dart:85-86` 的 `onEvent` → `onStateChanged` 顺序），共两条。`text_command` 是例外：意图执行在 `executeIntent` 内已先触发一次 `onStateChanged`（`command_service.dart:147`），回到 `executeCommand` 后再走 `onEvent` → `onStateChanged`，实际广播为 **state → event → state** 三条（示例见第 5 章）。
@@ -79,6 +85,12 @@ WS 文本帧，JSON 对象：
   "weather": "北京 晴 32°",
   "voice": "待唤醒",
   "volume": 0.8,
+  "musicEnabled": true,
+  "musicMuted": false,
+  "musicVolume": 0.55,
+  "musicTitle": "童年成长 · 晨光序曲",
+  "musicMood": "童年成长",
+  "musicQuiet": false,
   "nas": "已连接 128 张"
 }
 ```
@@ -90,8 +102,14 @@ WS 文本帧，JSON 对象：
 | `photo` | string | 当前照片文件名；相册为空时为 `（相册为空）` |
 | `photoCount` | number | 相册照片总数 |
 | `weather` | string | 天气摘要，格式 `<城市> <天气文案> <温度>°`（如 `北京 晴 32°`）；无数据时为 `加载中…`，获取失败为 `获取失败` |
-| `voice` | string | 语音状态文本，由 `VoicePipeline.stateText` 注入，取值仅 `待唤醒` / `手动模式` / `聆听中…` / `识别中…` / `播报中…`（`voice_pipeline.dart:46-51`）；未注入时为 `-`（`main.dart:48` 总是注入，实际运行中不会出现） |
+| `voice` | string | 当前 `VoiceProvider.stateText`，常见值为`待唤醒：天猫精灵` / `手动对话` / `聆听中…` / `识别中…` / `播报中…` / `语音服务异常` |
 | `volume` | number | 播报音量 0..1 |
+| `musicEnabled` | boolean | 背景音乐是否处于播放状态 |
+| `musicMuted` | boolean | 背景音乐是否由用户静音 |
+| `musicVolume` | number | 背景音乐独立音量 0..1 |
+| `musicTitle` | string | 当前智能配乐标题或用户音乐文件名 |
+| `musicMood` | string | 当前照片故事对应的音乐主题 |
+| `musicQuiet` | boolean | 当前是否命中夜间自动静音时段 |
 | `nas` | string | NAS 相册状态（`PhotoService.nasStatus`），取值仅 `未启用` / `未配置` / `已连接 N 张` / `已连接 N 张（已过滤 M）`（有被截图过滤规则排除的文件时，`M` 为被过滤数量）/ `连接失败` |
 
 ### event 事件消息
@@ -193,6 +211,9 @@ web 控制台（`apps/smart_frame/assets/web_console/index.html` 的「NAS 相�
 
 ## 6. 计算节点 → 展示节点：照片与说明
 
+> 本节 8780 compute/display 直连协议仅为历史兼容。CCL/RK3588 当前使用带节点鉴权的
+> `home_agent` `/api/v1/media` HTTP/WS 协议，见 [家庭 Agent 协议](home-agent-protocol.md)。
+
 `GET /api/photos/list` 返回计算节点当前照片列表：
 
 ```json
@@ -232,6 +253,44 @@ hidden 对齐和重启续播；不得把列表下标作为持久化身份。
 - `timeIsFileModified=true` 表示没有可靠拍摄时间，当前值只是文件时间，界面必须明确标注。
 - id 缺失返回 400；照片尚未进入索引返回 404。展示节点遇到 404/网络失败时仍可依据文件名、
   日期目录和明确的自定义相册目录显示安全回退说明。
+
+### 6.2 家庭人物确认
+
+`GET /api/index/person-profiles?status=unconfirmed&limit=12&offset=0` 返回按关联照片数从多到少排列的人脸聚类：
+
+```json
+{
+  "total": 1,
+  "profiles": [
+    {
+      "subjectName": "person_8",
+      "photoCount": 23,
+      "samplePhotoIds": ["/homes/photo/a.jpg", "/homes/photo/b.jpg"],
+      "sampleFaceIds": [181, 294],
+      "identityLabel": null,
+      "confirmed": false
+    }
+  ],
+  "allowedIdentityLabels": ["爸爸", "妈妈", "爷爷", "奶奶", "哥哥", "弟弟"]
+}
+```
+
+- `status` 可为 `all` / `confirmed` / `unconfirmed`，默认 `all`；非法值返回 400。
+- `limit` 为 1..50，默认 12；`offset` 大于等于 0。每个聚类最多返回 3 组未隐藏照片 ID 与人脸记录 ID；控制台优先用 `/api/index/person-face?id=<sampleFaceId>` 显示带 40% 留白的人脸裁剪，避免合影中确认错对象，旧端可回退 `/api/photos/file?id=`。裁剪接口可按索引照片 ID 直接拉 NAS 原图，不等待数万张照片的全量列表扫描结束。
+- `subjectName` 是人脸聚类内部 ID，不是家庭成员姓名；`photoCount` 用于优先确认高频人物。
+
+确认身份：
+
+```http
+POST /api/index/person-profile
+content-type: application/json
+
+{"subjectName":"person_8","identityLabel":"弟弟"}
+```
+
+响应 `{"ok":true,"subjectName":"person_8","identityLabel":"弟弟","confirmed":true}`。`identityLabel` 必须来自响应中的 `allowedIdentityLabels`；服务端不接受姓名或自由文本。传 `null` 撤销确认。聚类不存在、字段类型错误或非法称谓返回 400。确认结果写入计算节点共享 SQLite，之后 `/api/index/description` 会自动返回该关系称谓。
+
+人物确认目前沿用控制台的可信家庭局域网边界；在控制台认证完成前，不得把 8780 端口映射到公网。
 
 ## 7. 示例
 

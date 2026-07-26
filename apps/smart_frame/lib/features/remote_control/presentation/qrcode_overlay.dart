@@ -13,11 +13,11 @@ class QrCodeOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // display 节点显示计算节点 URL（自己不跑控制台）；compute 显示自己的
+    // display 节点显示家庭 Agent URL（自己不跑控制台）。
     final isDisplay =
         context.read<ConfigService>().config.serverRole == 'display';
     final url = isDisplay
-        ? context.read<ConfigService>().config.computeNodeUrl
+        ? context.read<ConfigService>().config.agentUrl
         : (context.read<ControlServer>().url ?? '服务器启动中…');
     return GestureDetector(
       onTap: onClose,

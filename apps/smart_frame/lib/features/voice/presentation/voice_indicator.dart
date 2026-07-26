@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 
 import 'package:smart_frame/features/voice/application/voice_provider.dart';
 
-/// 右下角语音状态指示（compute 用 VoicePipeline，display 用 VoiceClient，都实现 VoiceProvider）。
+/// 右下角语音状态指示；具体终端统一依赖薄客户端 VoiceProvider 抽象。
 class VoiceIndicator extends StatelessWidget {
   const VoiceIndicator({super.key});
 
@@ -20,23 +20,31 @@ class VoiceIndicator extends StatelessWidget {
       String s when s.contains('播报') => (Icons.volume_up, Colors.greenAccent),
       _ => (Icons.mic_none, Colors.white54),
     };
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.black54,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 22),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: const TextStyle(fontSize: 15, color: Colors.white70),
+    return Semantics(
+      button: true,
+      label: '开始语音录音',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: voice.triggerListen,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: Colors.black54,
+            borderRadius: BorderRadius.circular(24),
           ),
-        ],
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                text,
+                style: const TextStyle(fontSize: 15, color: Colors.white70),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

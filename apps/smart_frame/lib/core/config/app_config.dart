@@ -18,6 +18,13 @@ class AppConfig {
     this.asrModel = 'whisper-1',
     this.ttsVoice = 'zh-CN-XiaoxiaoNeural',
     this.volume = 0.8,
+    this.musicEnabled = true,
+    this.musicMuted = false,
+    this.musicVolume = 0.55,
+    this.musicDir = '',
+    this.musicOutputEnabled = true,
+    this.musicQuietStartHour = 22,
+    this.musicQuietEndHour = 8,
     this.wakeWordModelDir = '',
     this.nasEnabled = false,
     this.nasWebdavUrl = 'http://192.168.1.22:5005',
@@ -35,6 +42,10 @@ class AppConfig {
     this.ollamaUrl = 'http://localhost:11434',
     this.serverRole = 'compute',
     this.computeNodeUrl = '',
+    this.agentUrl = '',
+    this.nodeId = '',
+    this.roomId = '',
+    this.deviceKey = '',
   });
 
   /// 天气城市名（Open-Meteo 地理编码）
@@ -52,10 +63,10 @@ class AppConfig {
   /// 天气刷新间隔（分钟）
   int weatherRefreshMinutes;
 
-  /// 唤醒后聆听时长（秒）
+  /// 旧配置兼容字段；当前由 Home Agent 自动断句。
   int listenSeconds;
 
-  /// OpenAI 兼容 Whisper API（可指向 Groq 等）
+  /// 旧配置兼容字段；当前 ASR 只在 Home Agent 配置。
   String asrBaseUrl;
   String asrApiKey;
   String asrModel;
@@ -66,7 +77,22 @@ class AppConfig {
   /// 播报音量 0..1
   double volume;
 
-  /// sherpa-onnx KWS 唤醒词模型目录
+  /// 相册背景音乐开关、静音和独立音量。
+  bool musicEnabled;
+  bool musicMuted;
+  double musicVolume;
+
+  /// 用户音乐目录；为空时由 ConfigService 放到应用支持目录/music。
+  String musicDir;
+
+  /// 当前节点是否真正输出音乐。split 模式下 compute=false、display=true。
+  bool musicOutputEnabled;
+
+  /// 夜间自动静音区间（小时，起点包含、终点不包含）。
+  int musicQuietStartHour;
+  int musicQuietEndHour;
+
+  /// 旧配置兼容字段；App 不加载 KWS 模型。
   String wakeWordModelDir;
 
   /// 是否启用 NAS 相册来源
@@ -111,11 +137,18 @@ class AppConfig {
   /// ollama API 地址
   String ollamaUrl;
 
-  /// 节点角色：compute（计算+存储+模型，x86）/ display（展示，从 computeNodeUrl 拉数据，ARM）
+  /// 节点角色：compute 是历史桌面兼容模式；display 为服务端驱动的薄客户端。
   String serverRole;
 
-  /// 展示节点指向的计算节点 URL（如 http://192.168.1.9:8780）；仅 display 用
+  /// 历史 compute/display 直连地址；新 display 不再使用。
   String computeNodeUrl;
+
+  /// 独立家庭 Agent 地址与本设备节点凭据。展示端只连接该服务。
+  /// home_agent 服务 URL 及服务端签发的节点凭据。
+  String agentUrl;
+  String nodeId;
+  String roomId;
+  String deviceKey;
 
   factory AppConfig.fromJson(Map<String, dynamic> j) => AppConfig(
     city: j['city'] as String? ?? '广州',
@@ -129,6 +162,14 @@ class AppConfig {
     asrModel: j['asrModel'] as String? ?? 'whisper-1',
     ttsVoice: j['ttsVoice'] as String? ?? 'zh-CN-XiaoxiaoNeural',
     volume: (j['volume'] as num?)?.toDouble() ?? 0.8,
+    musicEnabled: j['musicEnabled'] as bool? ?? true,
+    musicMuted: j['musicMuted'] as bool? ?? false,
+    musicVolume: (j['musicVolume'] as num?)?.toDouble() ?? 0.55,
+    musicDir: j['musicDir'] as String? ?? '',
+    musicOutputEnabled:
+        j['musicOutputEnabled'] as bool? ?? _defaultMusicOutput(j),
+    musicQuietStartHour: j['musicQuietStartHour'] as int? ?? 22,
+    musicQuietEndHour: j['musicQuietEndHour'] as int? ?? 8,
     wakeWordModelDir: j['wakeWordModelDir'] as String? ?? '',
     nasEnabled: j['nasEnabled'] as bool? ?? false,
     nasWebdavUrl: j['nasWebdavUrl'] as String? ?? 'http://192.168.1.22:5005',
@@ -148,6 +189,10 @@ class AppConfig {
     ollamaUrl: j['ollamaUrl'] as String? ?? 'http://localhost:11434',
     serverRole: j['serverRole'] as String? ?? 'compute',
     computeNodeUrl: j['computeNodeUrl'] as String? ?? '',
+    agentUrl: j['agentUrl'] as String? ?? '',
+    nodeId: j['nodeId'] as String? ?? '',
+    roomId: j['roomId'] as String? ?? '',
+    deviceKey: j['deviceKey'] as String? ?? '',
   );
 
   Map<String, dynamic> toJson() => {
@@ -162,6 +207,13 @@ class AppConfig {
     'asrModel': asrModel,
     'ttsVoice': ttsVoice,
     'volume': volume,
+    'musicEnabled': musicEnabled,
+    'musicMuted': musicMuted,
+    'musicVolume': musicVolume,
+    'musicDir': musicDir,
+    'musicOutputEnabled': musicOutputEnabled,
+    'musicQuietStartHour': musicQuietStartHour,
+    'musicQuietEndHour': musicQuietEndHour,
     'wakeWordModelDir': wakeWordModelDir,
     'nasEnabled': nasEnabled,
     'nasWebdavUrl': nasWebdavUrl,
@@ -179,6 +231,10 @@ class AppConfig {
     'ollamaUrl': ollamaUrl,
     'serverRole': serverRole,
     'computeNodeUrl': computeNodeUrl,
+    'agentUrl': agentUrl,
+    'nodeId': nodeId,
+    'roomId': roomId,
+    'deviceKey': deviceKey,
   };
 }
 
@@ -217,6 +273,9 @@ class ConfigService extends ChangeNotifier {
     if (config.wakeWordModelDir.isEmpty) {
       config.wakeWordModelDir = p.join(supportDir, 'kws-model');
     }
+    if (config.musicDir.isEmpty) {
+      config.musicDir = p.join(supportDir, 'music');
+    }
   }
 
   Future<void> save() async {
@@ -226,4 +285,9 @@ class ConfigService extends ChangeNotifier {
     );
     notifyListeners();
   }
+}
+
+bool _defaultMusicOutput(Map<String, dynamic> json) {
+  if (!json.containsKey('serverRole')) return true;
+  return json['serverRole'] == 'display';
 }

@@ -4,17 +4,21 @@
 
 ## 1. 已知限制
 
-### L-1 唤醒词模型首次使用需访问 GitHub
+### L-1 原生唤醒适配器当前只覆盖 AILABS 固件
 
-- **依据**：`apps/smart_frame/lib/features/voice/application/wake_word.dart:23` 的 `modelUrl` 指向 `github.com/k2-fsa/sherpa-onnx/releases/download/...`；`ensureKwsModel`（`apps/smart_frame/lib/features/voice/application/wake_word.dart:112`）后台下载，超时 5 分钟。
-- **影响**：首次启动（或模型目录被清空）时，若 GitHub release-assets 不可达或下载超时，唤醒词功能不可用。
-- **缓解**：模型只需成功下载一次，之后完全离线；下载失败自动降级为手动模式，可用空格键或手机控制台按钮触发聆听，语音其余链路不受影响（呼应 NFR-5、NFR-6）。
+- **依据**：`NativeWakeBridge.kt` 显式绑定 AILABS 的 AliTVASR service component。
+- **当前真机结果**：公开 callback 受厂商登录状态阻断；Magisk 只读 `WakeupManager` 适配器已在
+  AILABS_S1L 上把固件 KWS 事件转换成 App wake event，并成功启动按需录音。
+- **影响**：该适配器只覆盖已 root 的 AILABS 固件；其他 Android/RK3588 终端若没有同类厂商事件
+  接口，仍需保留手动触发语音。
+- **缓解**：为新设备增加厂商事件适配器；设备没有可用原生接口时才由服务端提供 KWS，模型不得
+  重新放入 App。
 
-### L-2 语音识别依赖外部 OpenAI 兼容 API
+### L-2 语音交互依赖 Home Agent 可达
 
-- **依据**：`apps/smart_frame/lib/features/voice/application/asr_client.dart:8`（整个类即 OpenAI 兼容 Whisper API 客户端），`apps/smart_frame/lib/features/voice/application/asr_client.dart:23` 的 `isConfigured` 要求 `apiKey` 非空，识别请求为 HTTP POST 至 `$baseUrl/audio/transcriptions`。
-- **影响**：语音指令的识别准确率、延迟与可用性取决于第三方服务与网络；未配置 API Key 时语音指令链路不可用。
-- **缓解**：未配置时语音回复会提示去设置填写 API 地址与密钥，手机控制台的文字指令链路仍可用（呼应 NFR-6）；`asrBaseUrl` 可指向 Groq 或本地 faster-whisper 等自建服务，后者可使语音链路完全不依赖互联网（呼应 NFR-5）。
+- **依据**：智能屏已删除 App 内 ASR/TTS/KWS，`VoiceClient` 只连接已认证的 Home Agent 语音 WebSocket。
+- **影响**：服务器离线时相册仍工作，但自然语音对话不可用。
+- **缓解**：Home Agent 支持部署到 x86 或 RK3588；ASR/TTS provider 可在服务端本地/云端切换，节点保留手动重连状态。
 
 ### L-3 控制台无鉴权
 
@@ -43,7 +47,6 @@ NAS 相册子项目 1（WebDAV 图源 + 截图过滤 + LRU 缓存 + 混合轮播
 | 方向 | 针对限制 | 说明 |
 |---|---|---|
 | 局域网 token 鉴权 | L-3、L-4 | 首次连接经 token 校验（如二维码 URL 携带一次性 token），未授权连接拒绝或只读 |
-| 本地 ASR | L-2 | 内置或一键对接 faster-whisper 等本地识别服务，使语音链路全程离线 |
 | 应用内自定义唤醒词 | L-1 | 当前需手工编辑 `kws-model/keywords.txt`（见 `docs/requirements.md` FR-V-2）；可在设置页提供编辑入口并热生效 |
 | 照片管理 | L-4 | 控制台支持删除 / 收藏照片，配合上传配额一并考虑 |
 | iOS 原生控制台 | L-5 | 复用现有 HTTP/WebSocket 协议（见 `docs/protocol.md`）开发原生 App，浏览器控制台继续保留 |

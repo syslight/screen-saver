@@ -44,7 +44,6 @@ dependencies:
   shelf_multipart: ^2.0.1
   audioplayers: ^6.8.1
   record: ^7.1.1
-  sherpa_onnx: ^1.13.4
   wakelock_plus: ^1.6.1
   window_manager: ^0.5.2
   web_socket_channel: ^3.0.3
