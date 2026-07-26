@@ -11,15 +11,35 @@ import 'nas_photo_source.dart';
 
 /// 相册项：本地文件或 NAS 远程引用，二者必居其一。
 class PhotoItem {
-  PhotoItem._({required this.id, required this.name, this.local, this.nas});
+  PhotoItem._({
+    required this.id,
+    required this.name,
+    this.local,
+    this.nas,
+    this.modifiedAt,
+  });
 
   /// 本地文件项（id 为文件路径）
-  factory PhotoItem.fromLocal(File file) =>
-      PhotoItem._(id: file.path, name: p.basename(file.path), local: file);
+  factory PhotoItem.fromLocal(File file) {
+    DateTime? modifiedAt;
+    try {
+      modifiedAt = file.lastModifiedSync();
+    } catch (_) {}
+    return PhotoItem._(
+      id: file.path,
+      name: p.basename(file.path),
+      local: file,
+      modifiedAt: modifiedAt,
+    );
+  }
 
   /// NAS 引用项（id 为远程路径）
-  factory PhotoItem.fromNas(NasPhotoRef ref) =>
-      PhotoItem._(id: ref.path, name: ref.name, nas: ref);
+  factory PhotoItem.fromNas(NasPhotoRef ref) => PhotoItem._(
+    id: ref.path,
+    name: ref.name,
+    nas: ref,
+    modifiedAt: ref.mtime,
+  );
 
   /// 唯一标识：本地为文件路径，NAS 为远程路径
   final String id;
@@ -33,6 +53,9 @@ class PhotoItem {
   /// NAS 引用（仅 NAS 项非空）
   final NasPhotoRef? nas;
 
+  /// 文件最后修改时间；真实拍摄时间优先由照片索引元数据提供。
+  final DateTime? modifiedAt;
+
   bool get isNas => nas != null;
 }
 
@@ -44,6 +67,7 @@ class PhotoService extends ChangeNotifier {
     this.photoDir, {
     this.cacheDir = '',
     this.cacheLimitBytes = defaultCacheLimitBytes,
+    this.playbackStatePath = '',
   });
 
   static const imageExts = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif'];
@@ -79,6 +103,9 @@ class PhotoService extends ChangeNotifier {
   /// 缓存上限（字节），超出后按 lastModified 最旧先淘汰
   final int cacheLimitBytes;
 
+  /// 轮播进度文件；为空时不持久化（单测/临时实例可关闭）。
+  final String playbackStatePath;
+
   List<PhotoItem> photos = [];
   List<File> _localFiles = [];
   List<NasPhotoRef> _nasRefs = [];
@@ -100,7 +127,11 @@ class PhotoService extends ChangeNotifier {
   Timer? _slideshowTimer;
   Timer? _rescanTimer;
   Timer? _nasTimer;
+  Timer? _persistTimer;
   int _slideshowSeconds = 0;
+
+  /// 启动时恢复的 photo id。NAS 首次列表尚未返回时保留，避免被本地首张覆盖。
+  String? _pendingResumeId;
 
   PhotoItem? get current {
     final p = playable;
@@ -164,6 +195,15 @@ class PhotoService extends ChangeNotifier {
       _index = 0;
       return;
     }
+    final resumeId = _pendingResumeId;
+    if (resumeId != null) {
+      final resumeIndex = p.indexWhere((item) => item.id == resumeId);
+      if (resumeIndex >= 0) {
+        _index = resumeIndex;
+        _pendingResumeId = null;
+        return;
+      }
+    }
     if (currentId != null) {
       final i = p.indexWhere((item) => item.id == currentId);
       _index = i >= 0 ? i : 0;
@@ -176,6 +216,7 @@ class PhotoService extends ChangeNotifier {
   String get nasStatus => _nasStatus;
 
   Future<void> init() async {
+    await _loadPlaybackState();
     await rescan();
     _rescanTimer = Timer.periodic(
       const Duration(seconds: 30),
@@ -187,7 +228,9 @@ class PhotoService extends ChangeNotifier {
     if (dir == photoDir) return;
     photoDir = dir;
     _index = 0;
+    _pendingResumeId = null;
     await rescan();
+    _schedulePersistCurrent();
   }
 
   void startSlideshow(int seconds) {
@@ -269,6 +312,7 @@ class PhotoService extends ChangeNotifier {
         _nasRefs = [];
         _rebuildPhotos();
       }
+      _finishPendingResume();
       // 未启用/未配置时即使列表没变，状态文案也可能变了，必须刷新 UI
       notifyListeners();
     }
@@ -277,6 +321,7 @@ class PhotoService extends ChangeNotifier {
   Future<void> _refreshNas() async {
     final nas = _nas;
     if (nas == null) return;
+    var loaded = false;
     try {
       final refs = await nas.listPhotos();
       refs.sort((a, b) => a.name.compareTo(b.name));
@@ -286,11 +331,13 @@ class PhotoService extends ChangeNotifier {
       _nasStatus = filtered > 0
           ? '已连接 ${refs.length} 张（已过滤 $filtered）'
           : '已连接 ${refs.length} 张';
+      loaded = true;
     } catch (_) {
       // 静默降级：保留已知引用（已缓存的仍可展示），仅更新状态
       _nasStatus = '连接失败';
     }
     _rebuildPhotos();
+    if (loaded) _finishPendingResume();
     notifyListeners();
   }
 
@@ -436,11 +483,60 @@ class PhotoService extends ChangeNotifier {
   void _advance(int delta, {bool user = true}) {
     final p = playable;
     if (p.isEmpty) return;
+    if (user) _pendingResumeId = null;
     _index = (_index + delta) % p.length;
     if (_index < 0) _index += p.length;
+    if (_pendingResumeId == null) _schedulePersistCurrent();
     notifyListeners();
     // 手动切换后重新开始轮播计时，避免刚切完又跳
     if (user && _slideshowSeconds > 0) startSlideshow(_slideshowSeconds);
+  }
+
+  Future<void> _loadPlaybackState() async {
+    if (playbackStatePath.isEmpty) return;
+    try {
+      final file = File(playbackStatePath);
+      if (!await file.exists()) return;
+      final json =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      final id = (json['photoId'] as String?)?.trim();
+      if (id != null && id.isNotEmpty) _pendingResumeId = id;
+    } catch (_) {
+      // 进度文件损坏时从首张开始，不影响相册启动。
+    }
+  }
+
+  void _finishPendingResume() {
+    if (_pendingResumeId == null) return;
+    _pendingResumeId = null;
+    _schedulePersistCurrent();
+  }
+
+  void _schedulePersistCurrent() {
+    if (playbackStatePath.isEmpty || current == null) return;
+    _persistTimer?.cancel();
+    _persistTimer = Timer(const Duration(milliseconds: 250), () {
+      unawaited(_persistCurrent());
+    });
+  }
+
+  Future<void> _persistCurrent() async {
+    final id = current?.id;
+    if (id == null || playbackStatePath.isEmpty) return;
+    try {
+      final file = File(playbackStatePath);
+      await file.parent.create(recursive: true);
+      await file.writeAsString(
+        jsonEncode({
+          'version': 1,
+          'photoId': id,
+          'savedAt': DateTime.now().toUtc().toIso8601String(),
+        }),
+        flush: true,
+      );
+    } catch (_) {
+      // 存储失败不打断轮播。
+    }
   }
 
   @override
@@ -448,6 +544,7 @@ class PhotoService extends ChangeNotifier {
     _slideshowTimer?.cancel();
     _rescanTimer?.cancel();
     _nasTimer?.cancel();
+    _persistTimer?.cancel();
     super.dispose();
   }
 }

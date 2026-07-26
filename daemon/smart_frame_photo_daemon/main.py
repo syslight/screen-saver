@@ -131,8 +131,10 @@ def main(argv=None) -> int:
                         print(f"  ! faces: {e}", flush=True)
                 if "tags" in want and vlm is not None:
                     try:
-                        is_photo, tags = vlm.tag(img)
-                        db.update_tags(conn, ref.path, is_photo, tags)
+                        identities = db.confirmed_identities(conn, ref.path)
+                        is_photo, tags, caption = vlm.tag(
+                            img, identities=identities)
+                        db.update_tags(conn, ref.path, is_photo, tags, caption)
                         if not is_photo:
                             db.mark_hidden(conn, ref.path, "not_photo")
                     except Exception as e:

@@ -56,10 +56,11 @@ uv run python -m smart_frame_photo_daemon --watch --embed
 
 `~/.local/share/com.example.smart_frame/photo_index.db`（与 app 同文件）。
 
-- `photos`：`id`(=WebDAV path, PK)、`sha256`、`embedding_dinov2`/`embedding_clip`、`tags`、`is_photo`、`hidden`、`reason`、`quality_score`、`width`/`height`、`taken_at`、`thumb_path`…
-- `faces`：`photo_id`、`subject_name`(person_0/1/…)、`face_embedding`、`bbox`
+- `photos`：`id`(=WebDAV path, PK)、`sha256`、`embedding_dinov2`/`embedding_clip`、`tags`、`caption`（简短照片解说）、`location_name`、`is_photo`、`hidden`、`reason`、`quality_score`、`width`/`height`、`taken_at`、`thumb_path`…
+- `faces`：`photo_id`、`subject_name`(person_0/1/…，内部聚类 ID)、`face_embedding`、`bbox`
+- `person_profiles`：`subject_name` → `identity_label`（如“爷爷”“弟弟”）；只有 `confirmed=1` 的家长确认映射才会显示或传给 VLM，不存姓名。
 
-app 的 `PhotoIndexService`（lib/services/photo_index_service.dart）只读此库：`hidden=1` → `setHidden` 播放跳过；`tags`/`faces` → 筛选。
+app 的 `PhotoIndexService`（lib/services/photo_index_service.dart）只读此库：`hidden=1` → `setHidden` 播放跳过；`tags`/`faces` → 筛选；`person_profiles` → 照片故事中的家庭身份。VLM 按“已确认人物、地点、事件/动作、画面细节”生成第三人称解说。
 
 ## systemd 常驻
 

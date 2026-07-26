@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/calendar_service.dart';
 
-/// 日历小组件（左下角）：农历、干支生肖、节气、节日。
+/// 日历小组件：农历、干支生肖、节气、节日。
 class CalendarWidget extends StatefulWidget {
   const CalendarWidget({super.key});
 
@@ -44,7 +44,11 @@ class _CalendarWidgetState extends State<CalendarWidget> {
     return Text(
       parts.join('  ·  '),
       style: const TextStyle(
-          fontSize: 22, color: Colors.white, shadows: _shadow),
+        fontSize: 18,
+        height: 1.4,
+        color: Colors.white70,
+        shadows: _shadow,
+      ),
     );
   }
 }

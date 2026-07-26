@@ -51,46 +51,63 @@ class _PhotoSlideshowState extends State<PhotoSlideshow> {
         final seq = ++_requestSeq;
         final itemId = item.id;
         _loadingId = itemId;
-        unawaited(photos.fileFor(item).then((file) {
-          if (!mounted || seq != _requestSeq) return; // 丢弃过期结果
-          setState(() {
-            _loadingId = null;
-            // 失败也记录 id，避免每次重建都重试；失败时保持上一帧
-            _itemId = itemId;
-            if (file != null) _file = file;
-          });
-          photos.prefetchNext();
-        }));
+        unawaited(
+          photos.fileFor(item).then((file) {
+            if (!mounted || seq != _requestSeq) return; // 丢弃过期结果
+            setState(() {
+              _loadingId = null;
+              // 失败也记录 id，避免每次重建都重试；失败时保持上一帧
+              _itemId = itemId;
+              if (file != null) _file = file;
+            });
+            photos.prefetchNext();
+          }),
+        );
       }
     }
     final file = _file;
-    return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 1200),
-      child: file == null
-          ? Container(
-              key: const ValueKey('placeholder'),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF1a2a4a), Color(0xFF0d1420)],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dpr = MediaQuery.devicePixelRatioOf(context);
+        final decodeWidth = (constraints.maxWidth * dpr).ceil();
+        final decodeHeight = (constraints.maxHeight * dpr).ceil();
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 1200),
+          child: file == null
+              ? Container(
+                  key: const ValueKey('placeholder'),
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF1a2a4a), Color(0xFF0d1420)],
+                    ),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '把照片放进相册目录，或用手机上传',
+                      style: TextStyle(fontSize: 20, color: Colors.white38),
+                    ),
+                  ),
+                )
+              : Image(
+                  key: ValueKey(file.path),
+                  image: ResizeImage(
+                    FileImage(file),
+                    width: decodeWidth,
+                    height: decodeHeight,
+                    policy: ResizeImagePolicy.fit,
+                  ),
+                  fit: BoxFit.contain,
+                  width: double.infinity,
+                  height: double.infinity,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (context, error, stackTrace) =>
+                      Container(color: Colors.black),
                 ),
-              ),
-              child: const Center(
-                child: Text('把照片放进相册目录，或用手机上传',
-                    style: TextStyle(fontSize: 20, color: Colors.white38)),
-              ),
-            )
-          : Image.file(
-              file,
-              key: ValueKey(file.path),
-              fit: BoxFit.contain,
-              width: double.infinity,
-              height: double.infinity,
-              gaplessPlayback: true,
-              errorBuilder: (context, error, stackTrace) =>
-                  Container(color: Colors.black),
-            ),
+        );
+      },
     );
   }
 }

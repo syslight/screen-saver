@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 /// 应用配置。所有字段有默认值，零配置可启动。
 class AppConfig {
   AppConfig({
-    this.city = '北京',
+    this.city = '广州',
     this.photoDir = '',
     this.serverPort = 8780,
     this.slideshowSeconds = 10,
@@ -118,67 +118,68 @@ class AppConfig {
   String computeNodeUrl;
 
   factory AppConfig.fromJson(Map<String, dynamic> j) => AppConfig(
-        city: j['city'] as String? ?? '北京',
-        photoDir: j['photoDir'] as String? ?? '',
-        serverPort: j['serverPort'] as int? ?? 8780,
-        slideshowSeconds: j['slideshowSeconds'] as int? ?? 10,
-        weatherRefreshMinutes: j['weatherRefreshMinutes'] as int? ?? 30,
-        listenSeconds: j['listenSeconds'] as int? ?? 5,
-        asrBaseUrl: j['asrBaseUrl'] as String? ?? 'https://api.openai.com/v1',
-        asrApiKey: j['asrApiKey'] as String? ?? '',
-        asrModel: j['asrModel'] as String? ?? 'whisper-1',
-        ttsVoice: j['ttsVoice'] as String? ?? 'zh-CN-XiaoxiaoNeural',
-        volume: (j['volume'] as num?)?.toDouble() ?? 0.8,
-        wakeWordModelDir: j['wakeWordModelDir'] as String? ?? '',
-        nasEnabled: j['nasEnabled'] as bool? ?? false,
-        nasWebdavUrl: j['nasWebdavUrl'] as String? ?? 'http://192.168.1.22:5005',
-        nasWebdavUser: j['nasWebdavUser'] as String? ?? '',
-        nasWebdavPassword: j['nasWebdavPassword'] as String? ?? '',
-        nasRemoteDir: j['nasRemoteDir'] as String? ?? '',
-        nasFilterEnabled: j['nasFilterEnabled'] as bool? ?? true,
-        nasFilterKeywords: (j['nasFilterKeywords'] as List?)?.cast<String>() ??
-            const ['截图', 'screenshot', '屏幕快照', '收集'],
-        dedupEnabled: j['dedupEnabled'] as bool? ?? true,
-        dedupPHashThreshold: j['dedupPHashThreshold'] as int? ?? 5,
-        nasFilterMinBytes: j['nasFilterMinBytes'] as int? ?? 30720,
-        heicEnabled: j['heicEnabled'] as bool? ?? true,
-        vlmEnabled: j['vlmEnabled'] as bool? ?? false,
-        vlmModel: j['vlmModel'] as String? ?? 'minicpm-v',
-        ollamaUrl: j['ollamaUrl'] as String? ?? 'http://localhost:11434',
-        serverRole: j['serverRole'] as String? ?? 'compute',
-        computeNodeUrl: j['computeNodeUrl'] as String? ?? '',
-      );
+    city: j['city'] as String? ?? '广州',
+    photoDir: j['photoDir'] as String? ?? '',
+    serverPort: j['serverPort'] as int? ?? 8780,
+    slideshowSeconds: j['slideshowSeconds'] as int? ?? 10,
+    weatherRefreshMinutes: j['weatherRefreshMinutes'] as int? ?? 30,
+    listenSeconds: j['listenSeconds'] as int? ?? 5,
+    asrBaseUrl: j['asrBaseUrl'] as String? ?? 'https://api.openai.com/v1',
+    asrApiKey: j['asrApiKey'] as String? ?? '',
+    asrModel: j['asrModel'] as String? ?? 'whisper-1',
+    ttsVoice: j['ttsVoice'] as String? ?? 'zh-CN-XiaoxiaoNeural',
+    volume: (j['volume'] as num?)?.toDouble() ?? 0.8,
+    wakeWordModelDir: j['wakeWordModelDir'] as String? ?? '',
+    nasEnabled: j['nasEnabled'] as bool? ?? false,
+    nasWebdavUrl: j['nasWebdavUrl'] as String? ?? 'http://192.168.1.22:5005',
+    nasWebdavUser: j['nasWebdavUser'] as String? ?? '',
+    nasWebdavPassword: j['nasWebdavPassword'] as String? ?? '',
+    nasRemoteDir: j['nasRemoteDir'] as String? ?? '',
+    nasFilterEnabled: j['nasFilterEnabled'] as bool? ?? true,
+    nasFilterKeywords:
+        (j['nasFilterKeywords'] as List?)?.cast<String>() ??
+        const ['截图', 'screenshot', '屏幕快照', '收集'],
+    dedupEnabled: j['dedupEnabled'] as bool? ?? true,
+    dedupPHashThreshold: j['dedupPHashThreshold'] as int? ?? 5,
+    nasFilterMinBytes: j['nasFilterMinBytes'] as int? ?? 30720,
+    heicEnabled: j['heicEnabled'] as bool? ?? true,
+    vlmEnabled: j['vlmEnabled'] as bool? ?? false,
+    vlmModel: j['vlmModel'] as String? ?? 'minicpm-v',
+    ollamaUrl: j['ollamaUrl'] as String? ?? 'http://localhost:11434',
+    serverRole: j['serverRole'] as String? ?? 'compute',
+    computeNodeUrl: j['computeNodeUrl'] as String? ?? '',
+  );
 
   Map<String, dynamic> toJson() => {
-        'city': city,
-        'photoDir': photoDir,
-        'serverPort': serverPort,
-        'slideshowSeconds': slideshowSeconds,
-        'weatherRefreshMinutes': weatherRefreshMinutes,
-        'listenSeconds': listenSeconds,
-        'asrBaseUrl': asrBaseUrl,
-        'asrApiKey': asrApiKey,
-        'asrModel': asrModel,
-        'ttsVoice': ttsVoice,
-        'volume': volume,
-        'wakeWordModelDir': wakeWordModelDir,
-        'nasEnabled': nasEnabled,
-        'nasWebdavUrl': nasWebdavUrl,
-        'nasWebdavUser': nasWebdavUser,
-        'nasWebdavPassword': nasWebdavPassword,
-        'nasRemoteDir': nasRemoteDir,
-        'nasFilterEnabled': nasFilterEnabled,
-        'nasFilterKeywords': nasFilterKeywords,
-        'dedupEnabled': dedupEnabled,
-        'dedupPHashThreshold': dedupPHashThreshold,
-        'nasFilterMinBytes': nasFilterMinBytes,
-        'heicEnabled': heicEnabled,
-        'vlmEnabled': vlmEnabled,
-        'vlmModel': vlmModel,
-        'ollamaUrl': ollamaUrl,
-        'serverRole': serverRole,
-        'computeNodeUrl': computeNodeUrl,
-      };
+    'city': city,
+    'photoDir': photoDir,
+    'serverPort': serverPort,
+    'slideshowSeconds': slideshowSeconds,
+    'weatherRefreshMinutes': weatherRefreshMinutes,
+    'listenSeconds': listenSeconds,
+    'asrBaseUrl': asrBaseUrl,
+    'asrApiKey': asrApiKey,
+    'asrModel': asrModel,
+    'ttsVoice': ttsVoice,
+    'volume': volume,
+    'wakeWordModelDir': wakeWordModelDir,
+    'nasEnabled': nasEnabled,
+    'nasWebdavUrl': nasWebdavUrl,
+    'nasWebdavUser': nasWebdavUser,
+    'nasWebdavPassword': nasWebdavPassword,
+    'nasRemoteDir': nasRemoteDir,
+    'nasFilterEnabled': nasFilterEnabled,
+    'nasFilterKeywords': nasFilterKeywords,
+    'dedupEnabled': dedupEnabled,
+    'dedupPHashThreshold': dedupPHashThreshold,
+    'nasFilterMinBytes': nasFilterMinBytes,
+    'heicEnabled': heicEnabled,
+    'vlmEnabled': vlmEnabled,
+    'vlmModel': vlmModel,
+    'ollamaUrl': ollamaUrl,
+    'serverRole': serverRole,
+    'computeNodeUrl': computeNodeUrl,
+  };
 }
 
 /// 配置的加载与持久化，变更时通知。
@@ -196,7 +197,8 @@ class ConfigService extends ChangeNotifier {
     try {
       if (await _file.exists()) {
         config = AppConfig.fromJson(
-            jsonDecode(await _file.readAsString()) as Map<String, dynamic>);
+          jsonDecode(await _file.readAsString()) as Map<String, dynamic>,
+        );
       }
     } catch (_) {
       config = AppConfig();
@@ -206,7 +208,8 @@ class ConfigService extends ChangeNotifier {
 
   void _applyDefaults() {
     if (config.photoDir.isEmpty) {
-      final home = Platform.environment['HOME'] ??
+      final home =
+          Platform.environment['HOME'] ??
           Platform.environment['USERPROFILE'] ??
           supportDir;
       config.photoDir = p.join(home, 'Pictures');
@@ -219,7 +222,8 @@ class ConfigService extends ChangeNotifier {
   Future<void> save() async {
     await _file.parent.create(recursive: true);
     await _file.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(config.toJson()));
+      const JsonEncoder.withIndent('  ').convert(config.toJson()),
+    );
     notifyListeners();
   }
 }

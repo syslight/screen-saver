@@ -13,7 +13,7 @@ Dart 协议包，`student_app/` 是独立的 Android 学生作业端。现有智
 
 - **天气**：Open-Meteo 免费 API，无需 API Key，城市名自动定位
 - **日历**：公历 + 农历 + 干支生肖 + 节气 + 节日
-- **相册**：本地文件夹 + NAS（WebDAV）混合轮播（交叉渐变），截图自动过滤，手机扫码即可上传照片
+- **相册**：本地文件夹 + NAS（WebDAV）混合轮播（交叉渐变），自动续播上次位置，显示照片时间/地点/文字解说，截图自动过滤，手机扫码即可上传照片
 - **语音交互**：本地唤醒词（sherpa-onnx KWS）→ 云端 Whisper 识别 → 本地意图解析 → edge-tts 播报（系统 TTS 兜底）
 - **手机控制**：内置 HTTP/WebSocket 服务器，手机浏览器扫码进入控制台，多设备同时在线、状态实时同步
 
@@ -100,7 +100,7 @@ Android 首次启动需输入同一局域网内的计算节点地址，详见
 
 ```json
 {
-  "city": "北京",
+  "city": "广州",
   "photoDir": "",
   "serverPort": 8780,
   "slideshowSeconds": 10,
@@ -125,10 +125,12 @@ Android 首次启动需输入同一局域网内的计算节点地址，详见
 说明：
 
 - `photoDir` 为空时回落到 `~/Pictures`，把照片放进去即可（支持 jpg/png/webp/bmp/gif），手机上传的照片也存这里
+- **续播与照片说明**：当前照片 ID 写入应用支持目录的 `slideshow_state.json`，重启后恢复到同一张；拍摄时间优先取索引元数据，其次从相机文件名/日期目录推断，地点只显示明确的自定义相册目录，VLM 解说不可用时用已有场景标签生成简短说明，缺失字段不显示。
+- **屏幕常亮**：Android 使用 wakelock；Linux 同时使用 wakelock 和 `xset` 关闭屏保/DPMS，并定期重申，避免桌面电源管理器重新启用黑屏。
 - NAS 相册（WebDAV）在设置（S 键）或 web 控制台的「NAS 相册设置」卡片（`http://<电脑IP>:8780`）里配置：地址 / 账号 / 密码 / 远程目录，支持截图规则过滤；NAS 照片与本地照片混合轮播，未配置或连接失败时自动降级为本地相册，不影响其他功能
 - **去重与跳过**：`dedupEnabled` 开启后，对播放过的照片算内容指纹（sha256 完全重复 + dHash 近似重复），重复的张播放时跳过（**不删原文件**，只读）；`nasFilterMinBytes` 过滤小图/缩略图、`@eaDir` 自动排除。索引随播放增量积累（SQLite，存应用数据目录 `photo_index.db`）
 - **HEIC 支持**：iPhone 的 `.heic` 照片需系统 `heif-convert` 解码——Linux 装一次 `sudo apt install libheif-examples`（macOS 自带、Windows 需 libheif）；未安装时 HEIC 自动跳过、其余格式不受影响
-- **智能打标签（VLM，可选）**：开启 `vlmEnabled` 后，调用本地 [ollama](https://ollama.com) 视觉模型（默认 `minicpm-v`，先 `ollama pull minicpm-v`）给照片打场景标签、判定非照片（截图/表情包/文档/图标），非照片播放跳过。标签随播放增量计算（每张几秒，GTX 1070 Ti 级显卡），存 `photo_index.db`
+- **智能打标签（VLM，可选）**：开启 `vlmEnabled` 后，调用本地 [ollama](https://ollama.com) 视觉模型（默认 `minicpm-v`，先 `ollama pull minicpm-v`）给照片打场景标签和一句简短文字解说，并判定非照片（截图/表情包/文档/图标），非照片播放跳过。结果随后台索引增量计算，存 `photo_index.db`
 - `nasWebdavPassword` 为本地明文存储（家庭局域网场景），请勿把真实配置文件提交到公开仓库
 
 ## 测试

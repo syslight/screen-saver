@@ -29,7 +29,9 @@ CREATE TABLE IF NOT EXISTS photos (
   width INTEGER,
   height INTEGER,
   taken_at INTEGER,
-  thumb_path TEXT
+  thumb_path TEXT,
+  caption TEXT,
+  location_name TEXT
 );
 """
 
@@ -45,6 +47,18 @@ CREATE INDEX IF NOT EXISTS idx_faces_photo ON faces(photo_id);
 CREATE INDEX IF NOT EXISTS idx_faces_subject ON faces(subject_name);
 """
 
+# subject_name 是人脸聚类的内部 ID；identity_label 只存家庭关系，不存姓名。
+# 展示端只读 confirmed=1，禁止模型自行猜测人物身份。
+PERSON_PROFILES_SCHEMA = """
+CREATE TABLE IF NOT EXISTS person_profiles (
+  subject_name TEXT PRIMARY KEY,
+  identity_label TEXT NOT NULL,
+  confirmed INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  updated_at INTEGER
+);
+"""
+
 # 旧库（阶段 1/2 建）补阶段 3 新列
 NEW_COLUMNS = {
     "embedding_dinov2": "BLOB",
@@ -55,6 +69,8 @@ NEW_COLUMNS = {
     "height": "INTEGER",
     "taken_at": "INTEGER",
     "thumb_path": "TEXT",
+    "caption": "TEXT",
+    "location_name": "TEXT",
 }
 
 
@@ -70,6 +86,7 @@ def connect(path: Path = DB_PATH) -> sqlite3.Connection:
 def init_db(conn: sqlite3.Connection) -> None:
     conn.executescript(PHOTOS_SCHEMA)
     conn.executescript(FACES_SCHEMA)
+    conn.executescript(PERSON_PROFILES_SCHEMA)
     cols = {r["name"] for r in conn.execute("PRAGMA table_info(photos)")}
     for col, typ in NEW_COLUMNS.items():
         if col not in cols:
@@ -97,10 +114,14 @@ def update_embedding(conn: sqlite3.Connection, photo_id: str,
         conn.execute("UPDATE photos SET embedding_clip=? WHERE id=?", (clip, photo_id))
 
 
-def update_tags(conn: sqlite3.Connection, photo_id: str, is_photo: bool, tags: str) -> None:
-    """写入 VLM 标签 + is_photo（阶段 D）。"""
-    conn.execute("UPDATE photos SET is_photo=?, tags=?, tagged_at=? WHERE id=?",
-                 (1 if is_photo else 0, tags, int(time.time() * 1000), photo_id))
+def update_tags(conn: sqlite3.Connection, photo_id: str, is_photo: bool,
+                tags: str, caption: str = "") -> None:
+    """写入 VLM 标签、简短解说和 is_photo。"""
+    conn.execute(
+        "UPDATE photos SET is_photo=?, tags=?, caption=?, tagged_at=? WHERE id=?",
+        (1 if is_photo else 0, tags, caption or None,
+         int(time.time() * 1000), photo_id),
+    )
 
 
 def mark_hidden(conn: sqlite3.Connection, photo_id: str, reason: str) -> None:
@@ -114,6 +135,18 @@ def add_face(conn: sqlite3.Connection, photo_id: str, embedding: bytes, bbox: li
         "INSERT INTO faces (photo_id, face_embedding, bbox) VALUES (?,?,?)",
         (photo_id, embedding, json.dumps(bbox)),
     )
+
+
+def confirmed_identities(conn: sqlite3.Connection, photo_id: str) -> list[str]:
+    """返回照片中已由家长确认的家庭身份，不向 VLM 暴露姓名。"""
+    rows = conn.execute(
+        "SELECT DISTINCT p.identity_label FROM faces f "
+        "JOIN person_profiles p ON p.subject_name=f.subject_name "
+        "WHERE f.photo_id=? AND p.confirmed=1 "
+        "ORDER BY p.sort_order, p.identity_label",
+        (photo_id,),
+    ).fetchall()
+    return [row["identity_label"] for row in rows]
 
 
 def cluster_faces(conn: sqlite3.Connection, threshold: float = 0.5) -> int:

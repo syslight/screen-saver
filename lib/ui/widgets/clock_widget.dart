@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-/// 大时钟 + 公历日期（右上角）。
+/// 大时钟 + 公历日期（由主页统一放在左上角）。
 class ClockWidget extends StatefulWidget {
   const ClockWidget({super.key});
 
@@ -36,19 +36,27 @@ class _ClockWidgetState extends State<ClockWidget> {
     final m = _now.minute.toString().padLeft(2, '0');
     final s = _now.second.toString().padLeft(2, '0');
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.end,
+      crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('$h:$m',
-            style: const TextStyle(
-                fontSize: 96,
-                fontWeight: FontWeight.w200,
-                height: 1,
-                color: Colors.white,
-                shadows: _shadow)),
-        Text('$s 秒  ${_now.month}月${_now.day}日',
-            style: const TextStyle(
-                fontSize: 22, color: Colors.white70, shadows: _shadow)),
+        Text(
+          '$h:$m',
+          style: const TextStyle(
+            fontSize: 82,
+            fontWeight: FontWeight.w300,
+            height: 1,
+            color: Colors.white,
+            shadows: _shadow,
+          ),
+        ),
+        Text(
+          '${_now.month}月${_now.day}日  $s 秒',
+          style: const TextStyle(
+            fontSize: 20,
+            color: Colors.white70,
+            shadows: _shadow,
+          ),
+        ),
       ],
     );
   }

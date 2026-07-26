@@ -71,8 +71,7 @@ class ControlServer {
 
   Future<void> start() async {
     final router = Router()
-      ..get('/',
-          (Request req) => Response.ok(indexHtml, headers: _htmlHeaders))
+      ..get('/', (Request req) => Response.ok(indexHtml, headers: _htmlHeaders))
       ..get('/ws', webSocketHandler(_onWebSocket))
       ..get('/api/voice', webSocketHandler(_onVoice))
       ..get('/api/config', _onGetConfig)
@@ -85,6 +84,7 @@ class ControlServer {
       ..get('/api/index/bytag', _onIndexByTag)
       ..get('/api/index/byperson', _onIndexByPerson)
       ..get('/api/index/persons', _onIndexPersons)
+      ..get('/api/index/description', _onIndexDescription)
       ..get('/api/search/similar', (r) => _proxySearch(r, 'similar'))
       ..get('/api/search/text', (r) => _proxySearch(r, 'text'))
       ..post('/api/annotate', _onAnnotate)
@@ -103,7 +103,7 @@ class ControlServer {
 
   static const _htmlHeaders = {'content-type': 'text/html; charset=utf-8'};
   static const _jsonHeaders = {
-    'content-type': 'application/json; charset=utf-8'
+    'content-type': 'application/json; charset=utf-8',
   };
 
   void _onWebSocket(WebSocketChannel ws, String? protocol) {
@@ -137,13 +137,16 @@ class ControlServer {
       return;
     }
     void onState() {
-      ws.sink.add(jsonEncode({
-        'type': 'voice_state',
-        'state': voice.stateText,
-        'lastHeard': voice.lastHeard,
-        'lastReply': voice.lastReply,
-      }));
+      ws.sink.add(
+        jsonEncode({
+          'type': 'voice_state',
+          'state': voice.stateText,
+          'lastHeard': voice.lastHeard,
+          'lastReply': voice.lastReply,
+        }),
+      );
     }
+
     voice.addListener(onState);
     onState();
     final ttsSub = tts.stream.listen((mp3) => ws.sink.add(mp3));
@@ -187,8 +190,10 @@ class ControlServer {
       saved++;
     }
     await photos.rescan();
-    return Response.ok(jsonEncode({'saved': saved}),
-        headers: {'content-type': 'application/json'});
+    return Response.ok(
+      jsonEncode({'saved': saved}),
+      headers: {'content-type': 'application/json'},
+    );
   }
 
   // ===== C/S 数据端点（供 ARM 展示节点拉照片 + 索引）=====
@@ -196,11 +201,18 @@ class ControlServer {
   /// 照片列表（id = 远程 path，与索引 hidden 对齐）。
   Future<Response> _onPhotosList(Request req) async {
     final list = [
-      for (final p in photos.photos) {'id': p.id, 'name': p.name, 'isNas': p.isNas},
+      for (final p in photos.photos)
+        {
+          'id': p.id,
+          'name': p.name,
+          'isNas': p.isNas,
+          'modifiedAt': p.modifiedAt?.millisecondsSinceEpoch,
+        },
     ];
     return Response.ok(
-        jsonEncode({'photos': list, 'nas': photos.nasStatus}),
-        headers: _jsonHeaders);
+      jsonEncode({'photos': list, 'nas': photos.nasStatus}),
+      headers: _jsonHeaders,
+    );
   }
 
   /// 照片字节（`?id=path`）：复用 fileFor（本地直返 / NAS 缓存 / HEIC 转 jpg）。
@@ -225,30 +237,52 @@ class ControlServer {
 
   Future<Response> _onIndexStatus(Request req) async {
     return Response.ok(
-        jsonEncode({'indexStatus': photoIndex.indexStatus, ...photoIndex.statusMap}),
-        headers: _jsonHeaders);
+      jsonEncode({
+        'indexStatus': photoIndex.indexStatus,
+        ...photoIndex.statusMap,
+      }),
+      headers: _jsonHeaders,
+    );
   }
 
   Future<Response> _onIndexHidden(Request req) async {
-    return Response.ok(jsonEncode({'hidden': photoIndex.hiddenIds.toList()}),
-        headers: _jsonHeaders);
+    return Response.ok(
+      jsonEncode({'hidden': photoIndex.hiddenIds.toList()}),
+      headers: _jsonHeaders,
+    );
   }
 
   Future<Response> _onIndexByTag(Request req) async {
     final t = req.url.queryParameters['t'] ?? '';
     final ids = await photoIndex.byTag(t);
-    return Response.ok(jsonEncode({'ids': ids.toList()}), headers: _jsonHeaders);
+    return Response.ok(
+      jsonEncode({'ids': ids.toList()}),
+      headers: _jsonHeaders,
+    );
   }
 
   Future<Response> _onIndexByPerson(Request req) async {
     final p = req.url.queryParameters['p'] ?? '';
     final ids = await photoIndex.byPerson(p);
-    return Response.ok(jsonEncode({'ids': ids.toList()}), headers: _jsonHeaders);
+    return Response.ok(
+      jsonEncode({'ids': ids.toList()}),
+      headers: _jsonHeaders,
+    );
   }
 
   Future<Response> _onIndexPersons(Request req) async {
     final persons = await photoIndex.persons();
     return Response.ok(jsonEncode({'persons': persons}), headers: _jsonHeaders);
+  }
+
+  Future<Response> _onIndexDescription(Request req) async {
+    final id = req.url.queryParameters['id'];
+    if (id == null || id.isEmpty) {
+      return Response.badRequest(body: 'missing id');
+    }
+    final description = await photoIndex.backend.describe(id);
+    if (description == null) return Response.notFound('photo not indexed');
+    return Response.ok(jsonEncode(description.toJson()), headers: _jsonHeaders);
   }
 
   /// 人工标注：标记照片为某类别（重复/低画质/广告/截图等）→ hidden，不再显示。
@@ -259,15 +293,17 @@ class ControlServer {
       final reason = body['reason'] as String?;
       if (id == null || reason == null) {
         return Response.badRequest(
-            body: jsonEncode({'ok': false, 'error': 'missing id/reason'}),
-            headers: _jsonHeaders);
+          body: jsonEncode({'ok': false, 'error': 'missing id/reason'}),
+          headers: _jsonHeaders,
+        );
       }
       await photoIndex.annotate(id, reason);
       return Response.ok(jsonEncode({'ok': true}), headers: _jsonHeaders);
     } catch (e) {
       return Response.internalServerError(
-          body: jsonEncode({'ok': false, 'error': '$e'}),
-          headers: _jsonHeaders);
+        body: jsonEncode({'ok': false, 'error': '$e'}),
+        headers: _jsonHeaders,
+      );
     }
   }
 
@@ -279,18 +315,21 @@ class ControlServer {
       final q = (body['q'] as String?)?.trim() ?? '';
       if (q.isEmpty) {
         return Response.badRequest(
-            body: jsonEncode({'ok': false, 'error': 'missing q'}),
-            headers: _jsonHeaders);
+          body: jsonEncode({'ok': false, 'error': 'missing q'}),
+          headers: _jsonHeaders,
+        );
       }
       final ids = await photoIndex.searchText(q);
       photos.setFilter(ids);
       return Response.ok(
-          jsonEncode({'count': ids.length, 'query': q, 'ok': true}),
-          headers: _jsonHeaders);
+        jsonEncode({'count': ids.length, 'query': q, 'ok': true}),
+        headers: _jsonHeaders,
+      );
     } catch (e) {
       return Response.internalServerError(
-          body: jsonEncode({'ok': false, 'error': '$e'}),
-          headers: _jsonHeaders);
+        body: jsonEncode({'ok': false, 'error': '$e'}),
+        headers: _jsonHeaders,
+      );
     }
   }
 
@@ -304,12 +343,14 @@ class ControlServer {
   Future<Response> _proxySearch(Request req, String kind) async {
     try {
       final resp = await http.get(
-          Uri.parse('http://localhost:8781/api/search/$kind?${req.url.query}'));
+        Uri.parse('http://localhost:8781/api/search/$kind?${req.url.query}'),
+      );
       return Response(resp.statusCode, body: resp.body, headers: _jsonHeaders);
     } catch (e) {
       return Response.internalServerError(
-          body: jsonEncode({'error': '搜索服务不可用: $e'}),
-          headers: _jsonHeaders);
+        body: jsonEncode({'error': '搜索服务不可用: $e'}),
+        headers: _jsonHeaders,
+      );
     }
   }
 
@@ -346,8 +387,9 @@ class ControlServer {
       body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
     } catch (_) {
       return Response.badRequest(
-          body: jsonEncode({'ok': false, 'message': '请求体不是合法 JSON'}),
-          headers: _jsonHeaders);
+        body: jsonEncode({'ok': false, 'message': '请求体不是合法 JSON'}),
+        headers: _jsonHeaders,
+      );
     }
     try {
       final c = configService.config;
@@ -368,10 +410,14 @@ class ControlServer {
       }
       final kws = body['nasFilterKeywords'];
       if (kws is List) {
-        c.nasFilterKeywords =
-            kws.map((e) => e.toString()).where((s) => s.isNotEmpty).toList();
+        c.nasFilterKeywords = kws
+            .map((e) => e.toString())
+            .where((s) => s.isNotEmpty)
+            .toList();
       }
-      if (body['dedupEnabled'] is bool) c.dedupEnabled = body['dedupEnabled'] as bool;
+      if (body['dedupEnabled'] is bool) {
+        c.dedupEnabled = body['dedupEnabled'] as bool;
+      }
       if (body['dedupPHashThreshold'] is int) {
         c.dedupPHashThreshold = body['dedupPHashThreshold'] as int;
       }
@@ -406,8 +452,9 @@ class ControlServer {
       return Response.ok(jsonEncode({'ok': true}), headers: _jsonHeaders);
     } catch (e) {
       return Response.internalServerError(
-          body: jsonEncode({'ok': false, 'message': '$e'}),
-          headers: _jsonHeaders);
+        body: jsonEncode({'ok': false, 'message': '$e'}),
+        headers: _jsonHeaders,
+      );
     }
   }
 
@@ -419,13 +466,15 @@ class ControlServer {
       body = jsonDecode(await req.readAsString()) as Map<String, dynamic>;
     } catch (_) {
       return Response.ok(
-          jsonEncode({'ok': false, 'message': '请求体不是合法 JSON'}),
-          headers: _jsonHeaders);
+        jsonEncode({'ok': false, 'message': '请求体不是合法 JSON'}),
+        headers: _jsonHeaders,
+      );
     }
     final c = configService.config;
     final pwdRaw = body['nasWebdavPassword'];
-    final pwd =
-        (pwdRaw is String && pwdRaw.isNotEmpty) ? pwdRaw : c.nasWebdavPassword;
+    final pwd = (pwdRaw is String && pwdRaw.isNotEmpty)
+        ? pwdRaw
+        : c.nasWebdavPassword;
     final probe = NasPhotoSource()
       ..configure(
         url: (body['nasWebdavUrl'] as String? ?? c.nasWebdavUrl).trim(),
@@ -435,11 +484,15 @@ class ControlServer {
       );
     try {
       await probe.ping();
-      return Response.ok(jsonEncode({'ok': true, 'message': '连接成功'}),
-          headers: _jsonHeaders);
+      return Response.ok(
+        jsonEncode({'ok': true, 'message': '连接成功'}),
+        headers: _jsonHeaders,
+      );
     } catch (e) {
-      return Response.ok(jsonEncode({'ok': false, 'message': '连接失败：$e'}),
-          headers: _jsonHeaders);
+      return Response.ok(
+        jsonEncode({'ok': false, 'message': '连接失败：$e'}),
+        headers: _jsonHeaders,
+      );
     }
   }
 
@@ -449,14 +502,12 @@ class ControlServer {
     if (name.isEmpty || name.startsWith('.')) name = 'photo$name';
     if (File(p.join(dir, name)).existsSync()) {
       final stamp = DateTime.now().millisecondsSinceEpoch;
-      name =
-          '${p.basenameWithoutExtension(name)}_$stamp${p.extension(name)}';
+      name = '${p.basenameWithoutExtension(name)}_$stamp${p.extension(name)}';
     }
     return p.join(dir, name);
   }
 
-  void _broadcastState() =>
-      broadcast(encodeState(commands.currentState()));
+  void _broadcastState() => broadcast(encodeState(commands.currentState()));
 
   void broadcast(String message) {
     for (final client in _clients.toList()) {
@@ -479,7 +530,9 @@ class ControlServer {
   static Future<String?> _lanIp() async {
     try {
       final interfaces = await NetworkInterface.list(
-          type: InternetAddressType.IPv4, includeLinkLocal: false);
+        type: InternetAddressType.IPv4,
+        includeLinkLocal: false,
+      );
       for (final interface in interfaces) {
         for (final addr in interface.addresses) {
           if (!addr.isLoopback) return addr.address;

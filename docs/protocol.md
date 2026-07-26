@@ -16,6 +16,9 @@
 | `POST /api/config` | 保存 NAS 配置并即时生效 | `application/json`，见第 5 章 |
 | `POST /api/config/test` | 测试 NAS 连接 | `application/json`，见第 5 章 |
 | `POST /api/photos` | 照片上传 | `multipart/form-data`，见第 4 章 |
+| `GET /api/photos/list` | 展示节点读取照片列表 | `photos[]` 含 `id` / `name` / `isNas` / `modifiedAt`，见第 6 章 |
+| `GET /api/photos/file?id=` | 展示节点读取照片字节 | 本地或 NAS 缓存统一返回图片字节，见第 6 章 |
+| `GET /api/index/description?id=` | 展示节点读取照片说明 | 时间、地点、文字解说，见第 6 章 |
 
 要点：
 
@@ -188,7 +191,49 @@ web 控制台（`web_console/index.html` 的「NAS 相册设置」卡片）通�
 {"ok": false, "message": "连接失败：..."}
 ```
 
-## 6. 示例
+## 6. 计算节点 → 展示节点：照片与说明
+
+`GET /api/photos/list` 返回计算节点当前照片列表：
+
+```json
+{
+  "photos": [
+    {
+      "id": "/homes/photo/IMG_20221001_105505.jpg",
+      "name": "IMG_20221001_105505.jpg",
+      "isNas": true,
+      "modifiedAt": 1664592905000
+    }
+  ],
+  "nas": "已连接 73224 张"
+}
+```
+
+`modifiedAt` 为 Unix 毫秒，可为 `null`。展示节点把 `id` 作为稳定身份，用于按需下载、
+hidden 对齐和重启续播；不得把列表下标作为持久化身份。
+
+`GET /api/index/description?id=<URL 编码照片 ID>` 返回：
+
+```json
+{
+  "id": "/homes/photo/IMG_20221001_105505.jpg",
+  "takenAt": 1664592905000,
+  "datePrecision": "second",
+  "timeIsFileModified": false,
+  "location": "阳朔",
+  "caption": "爷爷和弟弟在公园散步，身后是夏日的绿树。",
+  "identities": ["爷爷", "弟弟"]
+}
+```
+
+- `takenAt`、`location`、`caption` 均可为 `null`，客户端不显示缺失字段。
+- `identities` 是已由家长确认的家庭关系标签数组（如“爷爷”“弟弟”）；不包含姓名，未确认的人脸聚类不会下发。
+- `datePrecision` 为 `second` / `day` / `month` / `year`；防止只有年月时误显示为某月 1 日。
+- `timeIsFileModified=true` 表示没有可靠拍摄时间，当前值只是文件时间，界面必须明确标注。
+- id 缺失返回 400；照片尚未进入索引返回 404。展示节点遇到 404/网络失败时仍可依据文件名、
+  日期目录和明确的自定义相册目录显示安全回退说明。
+
+## 7. 示例
 
 ### curl 上传照片
 

@@ -28,13 +28,25 @@ class HttpPhotoSource implements NasSource {
     final body = jsonDecode(resp.body) as Map<String, dynamic>;
     final list = (body['photos'] as List).cast<Map<String, dynamic>>();
     // id（计算节点 PhotoItem.id）= 远程 path 或本地文件路径，作 NasPhotoRef.path
-    return [for (final e in list) NasPhotoRef(path: e['id'] as String, size: 0)];
+    return [
+      for (final e in list)
+        NasPhotoRef(
+          path: e['id'] as String,
+          size: 0,
+          mtime: e['modifiedAt'] == null
+              ? null
+              : DateTime.fromMillisecondsSinceEpoch(e['modifiedAt'] as int),
+        ),
+    ];
   }
 
   @override
   Future<void> downloadTo(String remotePath, String savePath) async {
-    final resp = await http.get(Uri.parse(
-        '$baseUrl/api/photos/file?id=${Uri.encodeComponent(remotePath)}'));
+    final resp = await http.get(
+      Uri.parse(
+        '$baseUrl/api/photos/file?id=${Uri.encodeComponent(remotePath)}',
+      ),
+    );
     if (resp.statusCode != 200) {
       throw Exception('HTTP 下载失败 ${resp.statusCode}: $remotePath');
     }

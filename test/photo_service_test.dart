@@ -72,12 +72,15 @@ void main() {
   Future<File> writeLocal(String name, [List<int>? bytes]) =>
       File(p.join(photoDir.path, name)).writeAsBytes(bytes ?? [1, 2, 3]);
 
-  PhotoService makeService({int cacheLimitBytes = 500 * 1024 * 1024}) =>
-      PhotoService(
-        photoDir.path,
-        cacheDir: cacheDir.path,
-        cacheLimitBytes: cacheLimitBytes,
-      );
+  PhotoService makeService({
+    int cacheLimitBytes = 500 * 1024 * 1024,
+    String playbackStatePath = '',
+  }) => PhotoService(
+    photoDir.path,
+    cacheDir: cacheDir.path,
+    cacheLimitBytes: cacheLimitBytes,
+    playbackStatePath: playbackStatePath,
+  );
 
   AppConfig nasConfig({bool enabled = true, String remoteDir = '/photo'}) =>
       AppConfig(nasEnabled: enabled, nasRemoteDir: remoteDir);
@@ -145,6 +148,48 @@ void main() {
     expect(service.current!.name, 'a.jpg');
     service.prev(); // a → c（反向环绕，跳过 b）
     expect(service.current!.name, 'c.jpg');
+  });
+
+  test('轮播位置落盘，重启后恢复到上次照片', () async {
+    await writeLocal('a.jpg');
+    await writeLocal('b.jpg');
+    await writeLocal('c.jpg');
+    final statePath = p.join(cacheDir.path, 'slideshow_state.json');
+
+    final first = makeService(playbackStatePath: statePath);
+    await first.init();
+    first.next();
+    first.next();
+    expect(first.current!.name, 'c.jpg');
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+    first.dispose();
+
+    final restored = makeService(playbackStatePath: statePath);
+    addTearDown(restored.dispose);
+    await restored.init();
+    expect(restored.current!.name, 'c.jpg');
+  });
+
+  test('恢复位置会等待 NAS 首次列表，不被本地首张覆盖', () async {
+    await writeLocal('local.jpg');
+    final statePath = p.join(cacheDir.path, 'slideshow_state.json');
+    await File(
+      statePath,
+    ).writeAsString(jsonEncode({'version': 1, 'photoId': '/photo/b.jpg'}));
+    final nas = FakeNasSource(
+      refs: [
+        NasPhotoRef(path: '/photo/a.jpg', size: 10),
+        NasPhotoRef(path: '/photo/b.jpg', size: 10),
+      ],
+    );
+    final service = makeService(playbackStatePath: statePath);
+    addTearDown(service.dispose);
+    await service.init();
+    expect(service.current!.name, 'local.jpg');
+
+    await service.applyNasConfig(nasConfig(), nas);
+    await pumpNasRefresh(service, nas, '已连接 2 张');
+    expect(service.current!.id, '/photo/b.jpg');
   });
 
   test('筛选白名单与 hidden 取交集，清除后恢复全部可播放照片', () async {

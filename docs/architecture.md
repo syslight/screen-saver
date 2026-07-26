@@ -9,7 +9,9 @@
 | 目录 / 文件 | 关键类 / 函数 | 职责 |
 |---|---|---|
 | `lib/config/app_config.dart` | `AppConfig` / `ConfigService` | 19 个配置字段的模型、加载与持久化（`config.json`），零配置可启动 |
-| `lib/services/photo_service.dart` | `PhotoService` / `PhotoItem` | 本地 + NAS 相册聚合、自动轮播、手动切换、本地每 30 秒重扫、NAS 每 300 秒刷新、`nas-cache` 磁盘缓存（500MB LRU）与下一张预取、NAS 故障静默降级 |
+| `lib/services/photo_service.dart` | `PhotoService` / `PhotoItem` | 本地 + NAS 相册聚合、自动轮播、按照片 ID 持久化/恢复播放位置、定时重扫、`nas-cache` 磁盘缓存与下一张预取、NAS 故障静默降级 |
+| `lib/services/photo_index_service.dart` | `PhotoIndexService` / `PhotoDescription` | hidden/标签/人物索引，以及当前照片的已确认家庭身份、时间、地点、第三人称解说的计算端 SQLite / 展示端 HTTP 双后端 |
+| `lib/services/screen_awake_service.dart` | `ScreenAwakeService` | wakelock 常亮；Linux 叠加 X11 屏保/DPMS 关闭与周期重申 |
 | `lib/services/nas_photo_source.dart` | `NasSource` / `NasPhotoSource` / `NasPhotoRef` | NAS WebDAV 图源（`webdav_client`）：连接测试、递归列出远程图片（扩展名 + 截图规则过滤）、按引用下载；错误原样抛给调用方 |
 | `lib/services/nas_filter.dart` | `nasPhotoAllowed`（纯函数） | NAS 截图规则过滤：关键词（替换语义、大小写不敏感、空串跳过）+ 内置截图文件名正则 |
 | `lib/services/weather_service.dart` | `WeatherService` / `weatherFromJson` / `weatherCodeText` | Open-Meteo 地理编码 + 天气定时刷新，失败保留旧数据 |
@@ -23,7 +25,7 @@
 | `lib/voice/tts_service.dart` | `TtsService` | edge-tts 播报（WSS 协议手写），失败回退系统 TTS |
 | `lib/voice/intent_parser.dart` | `parseIntent` / `Intent` / `IntentType` | 本地意图解析（13 种意图，纯 Dart 无外部依赖） |
 | `lib/voice/audio_utils.dart` | `pcmToWav` / `pcmBytesToFloat32` / `generateBeepWav` | PCM/WAV 转换与提示音生成 |
-| `lib/ui/` | `DashboardPage` + 各 widget | 全屏仪表盘：相册背景 + 天气/时钟/日历/语音指示 + 二维码/设置浮层 |
+| `lib/ui/` | `DashboardPage` + 各 widget | 全屏仪表盘：相册背景（按屏幕物理尺寸等比解码，避免 ARM 软件渲染展开超大原图）+ 左上环境信息岛 + 右下动画故事卡 + 语音指示/二维码/设置浮层 |
 | `web_console/index.html` | — | 手机控制台单页（原生 JS，打包进 Flutter assets） |
 
 ## 2. 模块图
@@ -75,7 +77,7 @@
 9. **各服务独立初始化，失败隔离**（L62-67）：`photos.init()` → `photos.applyNasConfig(config, nasSource)`（内部按 `nasEnabled`/`nasRemoteDir` 决定是否真连，失败静默降级）→ `startSlideshow(slideshowSeconds)`；`weather.start(refreshMinutes: ...)`；`voice.init()` 用 `unawaited` 放后台。单个服务失败（无麦克风权限、无网络、NAS 不可达等）不影响其余服务与界面启动。
 10. **加载控制台页并构造服务器**（L69-75）：`rootBundle.loadString('web_console/index.html')` → 构造 `ControlServer(port, commands, photos, indexHtml)`。
 11. **启动服务器**（L76-80）：`server.start()` 包在 try/catch 中，失败仅 `debugPrint`，应用照常运行（手机控制不可用）。
-12. **常亮与全屏**（L82-83）：`unawaited(WakelockPlus.enable())` + `unawaited(windowManager.setFullScreen(true))`。
+12. **常亮与全屏**：`ScreenAwakeService.start()` 启用 wakelock；Linux 叠加 `xset s off` / `xset -dpms` / `xset s noblank` 并周期重申；随后进入沉浸式全屏。
 13. **runApp**（L85-100）：`MultiProvider` 注入 9 个 provider 后启动 `SmartFrameApp`（深色 Material 3 主题，首页 `DashboardPage`）。
 
 9 个 provider（main.dart:87-97）：前 5 个是 `ChangeNotifierProvider.value`（对象本身是可监听的状态源），后 4 个是 `Provider.value`（纯服务对象）：

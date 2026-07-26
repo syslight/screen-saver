@@ -16,7 +16,7 @@ IconData weatherCodeIcon(int code) {
   return Icons.help_outline;
 }
 
-/// 天气小组件（左上角）。
+/// 紧凑天气小组件（由主页统一放在左上角）。
 class WeatherWidget extends StatelessWidget {
   const WeatherWidget({super.key});
 
@@ -30,7 +30,10 @@ class WeatherWidget extends StatelessWidget {
       return Text(
         weather.error != null ? '天气获取失败' : '天气加载中…',
         style: const TextStyle(
-            fontSize: 18, color: Colors.white70, shadows: _shadow),
+          fontSize: 18,
+          color: Colors.white70,
+          shadows: _shadow,
+        ),
       );
     }
     return Column(
@@ -40,16 +43,23 @@ class WeatherWidget extends StatelessWidget {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(weatherCodeIcon(d.weatherCode),
-                size: 56, color: Colors.white, shadows: _shadow),
-            const SizedBox(width: 12),
-            Text('${d.temperature.round()}°',
-                style: const TextStyle(
-                    fontSize: 72,
-                    fontWeight: FontWeight.w200,
-                    height: 1,
-                    color: Colors.white,
-                    shadows: _shadow)),
+            Icon(
+              weatherCodeIcon(d.weatherCode),
+              size: 36,
+              color: Colors.white,
+              shadows: _shadow,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              '${d.temperature.round()}°',
+              style: const TextStyle(
+                fontSize: 46,
+                fontWeight: FontWeight.w300,
+                height: 1,
+                color: Colors.white,
+                shadows: _shadow,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 4),
@@ -57,7 +67,10 @@ class WeatherWidget extends StatelessWidget {
           '${d.cityName} · ${d.description} · '
           '${d.todayMin.round()}°/${d.todayMax.round()}° · 湿度${d.humidity}%',
           style: const TextStyle(
-              fontSize: 20, color: Colors.white70, shadows: _shadow),
+            fontSize: 18,
+            color: Colors.white70,
+            shadows: _shadow,
+          ),
         ),
       ],
     );

@@ -112,7 +112,7 @@ Keystore 支持的安全存储；manifest 禁用应用数据备份，避免 key 
 ```bash
 flutter pub get                              # 拉依赖
 flutter analyze                              # 静态检查，提交前必须无问题
-flutter test                                 # 57 个用例，详见第 4 章
+flutter test                                 # 85 个用例，详见第 4 章
 flutter run -d linux                         # 开发运行（全屏）
 flutter build linux|windows|macos --release  # 出包在 build/<平台>/.../release/ 下
 ```
@@ -151,7 +151,7 @@ unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy /home/peidong/flutter/bin/flutter test
 ```
 
-本机实测（2026-07-19）：上述 `env -u` 方式跑 `flutter test`，57 个用例全部通过。
+本机最新实测（2026-07-26）：上述 `env -u` 方式跑 `flutter test`，85 个用例全部通过。
 
 ## 3. 调试
 
@@ -179,17 +179,19 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 
 ## 4. 测试说明
 
-`flutter test` 共 57 个用例，全部是纯 Dart 单测（无 widget 测试），不需要真机窗口环境：
+`flutter test` 共 85 个用例，全部是纯 Dart 单测（无 widget 测试），不需要真机窗口环境：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
 | `test/app_config_test.dart` | 3 | AppConfig NAS 字段：默认值、`fromJson({})` 回落默认、toJson/fromJson 往返逐字段相等 |
+| `test/android_setup_page_test.dart` | 2 | Android 计算节点 URL 校验与规范化 |
 | `test/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
-| `test/control_server_test.dart` | 8 | 控制台页 GET /、WS 连接即发状态快照（含 `nas` 字段）、指令执行与事件/状态广播、文字指令走意图解析、音量设置、multipart 上传照片（含非图片拒绝）、非法 WS 消息容错 |
-| `test/intent_parser_test.dart` | 9 | `parseIntent`：天气 / 时间 / 日期 / 农历 / 照片切换 / 音量 / 播报 / 其他（显示二维码、帮助、未知）/ 带标点结尾 |
-| `test/nas_filter_test.dart` | 6 | `nasPhotoAllowed`：关键词命中路径任意段排除（大小写不敏感）、内置截图文件名正则、普通照片放行、`enabled=false` 全放行、keywords 替换语义、空串关键词跳过 |
-| `test/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器（`dart:io HttpServer`）端到端：ping + 递归列出（截图被过滤）、downloadTo 写盘长度正确、401 时 ping 抛异常、未 configure/remoteDir 空返回空 |
-| `test/photo_service_test.dart` | 15 | `PhotoService`：本地+NAS 混合列表排序与 id、`currentName`、fileFor 本地直返、NAS 下载入缓存与命中不重复下载、LRU 淘汰、NAS 失败静默降级（连接失败/未启用/未配置）、无缓存目录返回 null、rescan 保持当前张、next/prev 环绕与 setDir、prefetchNext 预取、`applyNasConfig` 首次刷新 fire-and-forget 不阻塞、下载中断清理部分缓存文件、nasStatus 含已过滤计数 |
+| `test/control_server_test.dart` | 17 | 控制台 HTTP/WS、照片说明与已确认家庭身份、指令广播、上传、NAS 配置与筛选 |
+| `test/intent_parser_test.dart` | 10 | 天气/时间/日期/农历/照片/音量/播报/语义筛选/其他意图 |
+| `test/nas_filter_test.dart` | 8 | 关键词、截图命名、`@eaDir`、小文件与禁用时放行 |
+| `test/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器 ping/递归列表/下载/认证与空配置 |
+| `test/photo_index_service_test.dart` | 6 | hidden/status、标签/人物、时间/地点/解说和已确认身份 |
+| `test/photo_service_test.dart` | 23 | 本地+NAS、缓存、降级、轮播/hidden/筛选、播放位置持久化与 display 图源 |
 | `test/protocol_test.dart` | 5 | `decodeCommand`（合法、带参数、非法输入抛 `FormatException`）、`encodeState`、`encodeEvent` |
 | `test/weather_service_test.dart` | 2 | `weatherCodeText` 天气码文案、`weatherFromJson` 解析 Open-Meteo 响应 |
 

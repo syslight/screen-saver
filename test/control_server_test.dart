@@ -15,6 +15,7 @@ import 'package:smart_frame/services/photo_index_service.dart';
 import 'package:smart_frame/services/photo_service.dart';
 import 'package:smart_frame/services/weather_service.dart';
 import 'package:smart_frame/voice/tts_service.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:web_socket_channel/io.dart';
 
 /// 假 NAS 图源（NasPhotoSource 子类，可注入 ControlServer.nas）：
@@ -166,6 +167,57 @@ void main() {
     final resp = await http.get(Uri.parse('http://localhost:$port/'));
     expect(resp.statusCode, 200);
     expect(resp.body, '<html>console</html>');
+  });
+
+  test('GET /api/index/description 校验 id，未索引照片返回 404', () async {
+    final missingId = await http.get(
+      Uri.parse('http://localhost:$port/api/index/description'),
+    );
+    expect(missingId.statusCode, 400);
+
+    final notIndexed = await http.get(
+      Uri.parse(
+        'http://localhost:$port/api/index/description?id=not-indexed.jpg',
+      ),
+    );
+    expect(notIndexed.statusCode, 404);
+  });
+
+  test('GET /api/index/description 返回经家长确认的家庭身份', () async {
+    final id = photos.current!.id;
+    final db = await databaseFactoryFfi.openDatabase(
+      p.join(photoDir.path, 'index_test.db'),
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    await db.insert('photos', {
+      'id': id,
+      'caption': '爷爷和弟弟在客厅一起看书。',
+      'location_name': '广州',
+    });
+    await db.insert('faces', {
+      'photo_id': id,
+      'subject_name': 'person_0',
+      'bbox': '[0,0,1,1]',
+    });
+    await db.insert('person_profiles', {
+      'subject_name': 'person_0',
+      'identity_label': '爷爷',
+      'confirmed': 1,
+    });
+    await db.close();
+
+    final resp = await http.get(
+      Uri.parse(
+        'http://localhost:$port/api/index/description'
+        '?id=${Uri.encodeQueryComponent(id)}',
+      ),
+    );
+    final body = jsonDecode(resp.body) as Map<String, dynamic>;
+
+    expect(resp.statusCode, 200);
+    expect(body['location'], '广州');
+    expect(body['caption'], '爷爷和弟弟在客厅一起看书。');
+    expect(body['identities'], ['爷爷']);
   });
 
   test('POST /api/filter 缺少查询时返回 400', () async {

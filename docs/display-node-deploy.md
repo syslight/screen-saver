@@ -56,7 +56,8 @@ build/linux/arm64/release/bundle/smart_frame
 若 ARM GPU 渲染有问题，参考 x86 的 `tool/run.sh` 思路（GDK_BACKEND / EGL 适配）。
 
 ## 验证
-- **相册**：轮播出 x86 的照片（HttpPhotoSource 拉 `/api/photos/list` + `/file`）
+- **相册**：轮播出 x86 的照片（HttpPhotoSource 拉 `/api/photos/list` + `/file`），重启后按 ID 续播
+- **照片说明**：从 `/api/index/description` 拉索引时间/地点/解说，缺失时用文件名和明确目录安全回退
 - **跳过**：hidden/非照片被跳过（HttpIndexBackend 拉 `/api/index/hidden`）
 - **语音**：对 ARM 麦克风说唤醒词 → 音频推 x86 KWS → ASR → TTS mp3 回 ARM 播
 
@@ -69,7 +70,8 @@ build/linux/arm64/release/bundle/smart_frame
 ## 协议（control_server 端点）
 | 端点 | 方向 | 用途 |
 |---|---|---|
-| `GET /api/photos/list` | x86→ARM | 照片列表（id/name/isNas） |
+| `GET /api/photos/list` | x86→ARM | 照片列表（id/name/isNas/modifiedAt） |
 | `GET /api/photos/file?id=` | x86→ARM | 照片字节（已转 jpg） |
 | `GET /api/index/status\|hidden\|bytag\|byperson\|persons` | x86→ARM | 索引查询 |
+| `GET /api/index/description?id=` | x86→ARM | 当前照片时间、地点、文字解说 |
 | `WS /api/voice` | 双向 | ARM 推 PCM/trigger；x86 推 state/TTS |

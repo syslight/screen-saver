@@ -12,7 +12,10 @@ from PIL import Image
 
 PROMPT = ('判断这张图片。只返回JSON：'
           '{"is_photo": true表示真实照片(非截图/表情包/meme/文档/图标/纯色), '
-          '"tags": [1-3个中文场景标签如 猫/风景/人物/食物]}')
+          '"tags": [1-3个中文场景标签如 猫/风景/人物/食物], '
+          '"caption": "一句不超过50字的第三人称中文照片故事"}。'
+          '解说优先写已确认人物，其次是地点、事件/动作，最后才是画面细节；'
+          '客观、温暖，不猜测未提供的身份、关系、地点或情绪。')
 
 
 class Vlm:
@@ -20,12 +23,17 @@ class Vlm:
         self.url = url
         self.model = model
 
-    def tag(self, img: Image.Image, timeout: float = 120.0) -> tuple:
+    def tag(self, img: Image.Image, timeout: float = 120.0,
+            identities: list[str] | None = None) -> tuple:
         small = img.convert("RGB")
         small.thumbnail((512, 512))
         buf = io.BytesIO()
         small.save(buf, "JPEG", quality=70)
         b64 = base64.b64encode(buf.getvalue()).decode()
+
+        prompt = PROMPT
+        if identities:
+            prompt += '\n照片中已经家长确认的身份：' + '、'.join(identities) + '。'
 
         resp = httpx.post(
             f"{self.url}/api/chat",
@@ -33,7 +41,7 @@ class Vlm:
                 "model": self.model,
                 "stream": False,
                 "format": "json",
-                "messages": [{"role": "user", "content": PROMPT, "images": [b64]}],
+                "messages": [{"role": "user", "content": prompt, "images": [b64]}],
             },
             timeout=timeout,
         )
@@ -42,7 +50,8 @@ class Vlm:
         is_photo = bool(parsed.get("is_photo"))
         tags_list = parsed.get("tags") or []
         tags = ",".join(t for t in (self._clean_tag(x) for x in tags_list[:3]) if t)
-        return (is_photo, tags)
+        caption = str(parsed.get("caption") or "").strip()[:120]
+        return (is_photo, tags, caption)
 
     @staticmethod
     def _clean_tag(t) -> str:

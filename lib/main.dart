@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'config/app_config.dart';
@@ -16,6 +15,7 @@ import 'services/http_photo_source.dart';
 import 'services/photo_index_service.dart';
 import 'services/nas_photo_source.dart';
 import 'services/photo_service.dart';
+import 'services/screen_awake_service.dart';
 import 'services/weather_service.dart';
 import 'ui/dashboard_page.dart';
 import 'ui/android_setup_page.dart';
@@ -69,6 +69,7 @@ Future<void> _startSmartFrame(ConfigService configService) async {
   final photos = PhotoService(
     config.photoDir,
     cacheDir: p.join(configService.supportDir, 'nas-cache'),
+    playbackStatePath: p.join(configService.supportDir, 'slideshow_state.json'),
   )..heicEnabled = config.heicEnabled;
   final weather = WeatherService(city: config.city);
   final tts = TtsService(voice: config.ttsVoice, volume: config.volume);
@@ -146,7 +147,8 @@ Future<void> _startSmartFrame(ConfigService configService) async {
     }
   }
 
-  unawaited(WakelockPlus.enable());
+  final screenAwake = ScreenAwakeService();
+  await screenAwake.start();
   if (Platform.isAndroid) {
     await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   } else {
@@ -177,10 +179,22 @@ class SmartFrameApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final baseTheme = ThemeData.dark(useMaterial3: true);
+    final theme = Platform.isLinux
+        ? baseTheme.copyWith(
+            textTheme: baseTheme.textTheme.apply(
+              fontFamily: 'Noto Sans CJK SC',
+            ),
+            primaryTextTheme: baseTheme.primaryTextTheme.apply(
+              fontFamily: 'Noto Sans CJK SC',
+            ),
+          )
+        : baseTheme;
+
     return MaterialApp(
       title: '智能屏',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(useMaterial3: true),
+      theme: theme,
       home: const DashboardPage(),
     );
   }

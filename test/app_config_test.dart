@@ -5,6 +5,7 @@ void main() {
   group('AppConfig NAS 字段', () {
     test('默认值', () {
       final c = AppConfig();
+      expect(c.city, '广州');
       expect(c.nasEnabled, isFalse);
       expect(c.nasWebdavUrl, 'http://192.168.1.22:5005');
       expect(c.nasWebdavUser, '');
@@ -16,6 +17,7 @@ void main() {
 
     test('fromJson({}) 缺省时回落默认值', () {
       final c = AppConfig.fromJson({});
+      expect(c.city, '广州');
       expect(c.nasEnabled, isFalse);
       expect(c.nasWebdavUrl, 'http://192.168.1.22:5005');
       expect(c.nasWebdavUser, '');

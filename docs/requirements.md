@@ -13,7 +13,7 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
 ### 2.1 天气
 
 - [x] FR-W-1 使用 Open-Meteo 免费 API 获取天气，无需 API Key。
-- [x] FR-W-2 以城市名配置地点（`city`，默认"北京"），经 Open-Meteo 地理编码（`geocoding-api.open-meteo.com`，`language=zh`，取首个结果）解析为经纬度。
+- [x] FR-W-2 以城市名配置地点（`city`，默认"广州"），经 Open-Meteo 地理编码（`geocoding-api.open-meteo.com`，`language=zh`，取首个结果）解析为经纬度。
 - [x] FR-W-3 按 `weatherRefreshMinutes`（默认 30 分钟）定时自动刷新。
 - [x] FR-W-4 界面展示当前温度、城市、天气状况（WMO 天气码映射为中文描述）、今日最低/最高温度与湿度；体感温度纳入天气语音播报；风速仅采集解析，未在界面或播报中使用。
 - [x] FR-W-5 刷新失败时保留上一次成功的数据，仅记录错误，不打断界面。
@@ -38,6 +38,11 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
 - [x] FR-P-8 NAS 图片不预下载，按需拉取并落磁盘缓存（应用支持目录 `nas-cache/`，文件名 = sha256(远程路径) 前 16 位 + 原扩展名）；缓存上限 500MB，超出按最久未访问（LRU）淘汰；展示当前张时后台预取下一张 NAS 图。
 - [x] FR-P-9 NAS 截图规则过滤（`nasFilterEnabled` 默认开，仅作用于 NAS 来源）：路径或文件名含 `nasFilterKeywords` 任一关键词（默认 `截图` / `screenshot` / `屏幕快照` / `收集`，大小写不敏感，替换语义，空串跳过）即排除；文件名命中内置截图命名正则（`^Screenshot[_ -]`、`^Screen Shot`、`^screencap`，大小写不敏感）即排除。两个来源都只认 `imageExts`，视频不进相册。
 - [x] FR-P-10 NAS 状态（`未启用` / `未配置` / `已连接 N 张` / `已连接 N 张（已过滤 M）` / `连接失败`）进入状态快照 `nas` 字段，手机控制台可见。
+- [x] FR-P-11 每次切换后把当前照片 ID 写入 `slideshow_state.json`；启动时等待首次 NAS 列表并按 ID 恢复，不依赖会随增删变化的数组下标。
+- [x] FR-P-12 当前照片可显示拍摄时间、地点与简短文字解说：索引元数据优先，文件名/日期目录/明确相册目录安全回退；缺失或不可靠字段不显示。
+- [x] FR-P-13 屏幕左上角统一显示时间、广州天气与日历；右下角用大字故事卡跟随照片切换动画。
+- [x] FR-P-14 照片说明按“已确认家庭身份 → 地点 → 事件/动作 → 画面细节”组织；身份只显示关系标签，不显示姓名，未经家长确认不展示。
+- [x] FR-P-15 展示端按屏幕物理尺寸等比缩小解码超大照片，避免 RK3588 软件渲染时把相机原图完整展开导致内存/渲染进程异常。
 
 ### 2.4 语音交互
 
@@ -68,7 +73,7 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
 ## 3. 非功能需求
 
 - NFR-1 **三平台桌面**：Windows / macOS / Linux，Flutter 3.44+（stable），同一套代码出三个平台的包。
-- NFR-2 **全屏常驻**：启动即全屏（window_manager），`wakelock_plus` 阻止系统休眠；按 Esc 退出全屏。
+- NFR-2 **全屏常驻**：启动即全屏；`wakelock_plus` 阻止系统休眠，Linux 额外用 `xset` 关闭屏保/DPMS且每 2 分钟及应用恢复时重申；按 Esc 退出全屏。
 - NFR-3 **零配置可启动**：全部 19 个配置字段有默认值，配置文件缺失或损坏时回落默认值；相册目录不存在时自动创建。
 - NFR-4 **失败隔离**：各服务独立初始化，单个失败不影响整体（`lib/main.dart` "各服务独立初始化，单个失败不影响整体"为据）——语音初始化放后台执行，控制台服务器启动失败仅记录日志，应用照常运行。
 - NFR-5 **局域网内工作**：手机控制要求与电脑同一局域网；除天气、ASR、edge-tts 与唤醒词模型首次下载外，全部功能（日历、相册、意图解析、系统 TTS）不依赖互联网。
@@ -77,5 +82,5 @@ smart_frame 是跑在 Windows / macOS / Linux 上的 Flutter 桌面全屏智能�
   - KWS 模型缺失且后台下载失败 → 手动模式（空格键 / 手机按钮触发）；
   - ASR 未配置 → 语音回复提示去设置填写 API 地址和密钥，文字指令链路仍可用；
   - edge-tts 网络失败 → 自动回退系统 TTS。
-- NFR-7 **质量基线**：`flutter analyze` 无问题、`flutter test` 全绿（当前 57 个纯 Dart 单测）才算改动完成。
+- NFR-7 **质量基线**：`flutter analyze` 无问题、`flutter test` 全绿（当前 85 个纯 Dart 单测）才算改动完成。
 - NFR-8 **NAS 相册逐层降级**：未启用 / 未配置（`nasRemoteDir` 为空）→ 完全不访问 NAS；连接失败 / 凭据错误 → 静默降级为"本地 + 已缓存 NAS 图"，不弹窗，状态落 `连接失败`，下轮刷新（300 秒）自动重试；单张下载失败 → 跳过该张（视同不存在），不影响轮播。
