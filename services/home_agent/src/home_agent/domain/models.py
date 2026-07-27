@@ -61,8 +61,23 @@ class AuthSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    client_name: Mapped[str | None] = mapped_column(String(120))
+    platform: Mapped[str | None] = mapped_column(String(40))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ParentEnrollmentCode(Base):
+    __tablename__ = "parent_enrollment_codes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    household_id: Mapped[str] = mapped_column(ForeignKey("households.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

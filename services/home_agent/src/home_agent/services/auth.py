@@ -2,16 +2,32 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from sqlalchemy import update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from home_agent.config import Settings
-from home_agent.domain.models import AuthSession, Household, Room, User, new_id, utc_now
+from home_agent.domain.models import (
+    AuthSession,
+    Household,
+    ParentEnrollmentCode,
+    Room,
+    User,
+    new_id,
+    utc_now,
+)
 from home_agent.errors import DomainError
 from home_agent.repositories.audit import AuditRepository
 from home_agent.repositories.auth import AuthenticatedParent, AuthRepository
 from home_agent.repositories.household import BootstrapResult, HouseholdRepository
-from home_agent.security import credential_hash, hash_password, random_credential, verify_password
+from home_agent.security import (
+    credential_hash,
+    hash_password,
+    random_credential,
+    random_human_code,
+    verify_password,
+)
 
 
 def _utc(value: datetime) -> datetime:
@@ -79,6 +95,82 @@ class AuthService:
             action="auth.login",
             resource_type="session",
             resource_id=auth_session.id,
+        )
+        return token, auth_session, user
+
+    async def create_parent_enrollment(
+        self, parent: AuthenticatedParent
+    ) -> tuple[str, ParentEnrollmentCode]:
+        code = random_human_code()
+        enrollment = await self.auth.create_parent_enrollment(
+            code_hash=credential_hash(code),
+            household_id=parent.user.household_id,
+            user_id=parent.user.id,
+            expires_at=utc_now() + timedelta(seconds=self.settings.parent_enrollment_ttl_seconds),
+            created_by=parent.user.id,
+        )
+        await self.audit.add(
+            household_id=parent.user.household_id,
+            actor_type="user",
+            actor_id=parent.user.id,
+            action="parent.enrollment_code.create",
+            resource_type="user",
+            resource_id=parent.user.id,
+        )
+        return code, enrollment
+
+    async def enroll_parent_device(
+        self, code: str, device_name: str, platform: str
+    ) -> tuple[str, AuthSession, User]:
+        enrollment = await self.auth.parent_enrollment_by_hash(credential_hash(code))
+        if enrollment is None:
+            raise DomainError(
+                "invalid_enrollment_code", "Enrollment code is invalid", status_code=401
+            )
+        now = utc_now()
+        if enrollment.used_at is not None:
+            raise DomainError(
+                "enrollment_code_used", "Enrollment code has already been used", status_code=409
+            )
+        if _utc(enrollment.expires_at) <= now:
+            raise DomainError(
+                "enrollment_code_expired", "Enrollment code has expired", status_code=410
+            )
+        consumed = await self.session.execute(
+            update(ParentEnrollmentCode)
+            .where(
+                ParentEnrollmentCode.id == enrollment.id,
+                ParentEnrollmentCode.used_at.is_(None),
+                ParentEnrollmentCode.expires_at > now,
+            )
+            .values(used_at=now),
+            execution_options={"synchronize_session": False},
+        )
+        if not isinstance(consumed, CursorResult) or consumed.rowcount != 1:
+            raise DomainError(
+                "enrollment_code_used", "Enrollment code has already been used", status_code=409
+            )
+        user = await self.auth.user_by_id(enrollment.household_id, enrollment.user_id)
+        if user is None:
+            raise DomainError(
+                "invalid_enrollment_code", "Enrollment code is invalid", status_code=401
+            )
+        token = random_credential()
+        auth_session = await self.auth.create_session(
+            user.id,
+            credential_hash(token),
+            now + timedelta(seconds=self.settings.session_ttl_seconds),
+            client_name=device_name,
+            platform=platform,
+        )
+        await self.audit.add(
+            household_id=user.household_id,
+            actor_type="parent_device",
+            actor_id=auth_session.id,
+            action="parent.device.enroll",
+            resource_type="session",
+            resource_id=auth_session.id,
+            payload={"deviceName": device_name, "platform": platform},
         )
         return token, auth_session, user
 

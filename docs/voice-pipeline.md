@@ -45,6 +45,9 @@ Flutter 显示“原生唤醒不可用”，触屏、空格键和控制端 `list
 Binder 不会发出较晚的 `start_recording` callback；但固件 KWS 事件仍然产生。版本 1005 的
 `firmware_log` 适配器已在真机收到 wake event，并在约 150 ms 后启动 Android `AudioRecord`。
 该适配器要求 Magisk 对 App UID 授予 root；权限仅用于运行按标签过滤的只读 `logcat`。
+收到原生 wake event 后，App 立即清除历史连接/可用性提示并显示“已唤醒，准备聆听…”，随后进入
+“聆听中…”。`listening/processing/speaking` 活动状态始终优先于旧 `statusMessage`，避免界面仍停在
+“待唤醒”而录音实际上已经开始。
 
 ## 3. 一轮对话
 
@@ -61,10 +64,12 @@ Android VoiceClient ── voice.turn.start ──▶ Home Agent
           ◀──────── voice.turn.state ─────────┤ processing
           │ 立即停止并释放麦克风               │
                                              │                                  ├─ 火山 / faster-whisper / OpenAI ASR
-          │                                  ├─ GLM/Kimi 等 Agent
-          │                                  └─ 火山/Piper TTS
-          ◀──── speaking + audio.play + bytes ┤
-          │ 播放服务端音频                     │
+          │                                  ├─ GLM/Kimi SSE token stream
+          │                                  └─ 句界切分 → 火山/OpenAI PCM stream
+          ◀──── speaking + audio.stream.start ┤
+          ◀──────────── PCM 二进制块 ──────────┤
+          ◀──────── audio.stream.end ──────────┤
+          │ AudioTrack/aplay 边收边播           │
           ◀──────────── idle ─────────────────┘
           └─ continueDialog=true 时开始下一轮按需录音
 ```
@@ -72,7 +77,9 @@ Android VoiceClient ── voice.turn.start ──▶ Home Agent
 客户端不发送“我判断说完了”的语义事件。Home Agent 的 `VoiceEndpointDetector` 根据收到的
 PCM 判断：至少约 120ms 有效人声后，尾部连续静音约 700ms 自动结束；8 秒无人说话退出；单轮
 最长 12 秒。服务端发出 `processing` 后客户端停止录音。旧客户端主动发送
-`voice.turn.stop` 仍受支持，保证协议向后兼容。
+`voice.turn.stop` 仍受支持，保证协议向后兼容。客户端 `record.startStream` 使用约 50 ms 的
+PCM buffer，录音块不在 App 聚合；WebSocket 读取在每个播放块写入系统音频设备期间暂停，利用
+TCP/WebSocket 回压限制客户端缓存增长。
 
 ## 4. 连续对话
 
@@ -89,15 +96,32 @@ ASR 默认 provider 是火山 ASR 2.0 的优化版双向流式接口
 本地 VAD 判停后发送负 sequence 结束帧并使用最终结果。可切换到本地 `faster-whisper` 或
 OpenAI-compatible `/audio/transcriptions`。
 
-TTS 默认 provider 是火山 V3 双向流式接口，保留本地 Piper 和 OpenAI-compatible
-`/audio/speech`。火山返回的 PCM 在 Home Agent 聚合为 WAV 后按现有 `audio.play` 协议发给节点；
-因此供应商侧已流式，节点侧仍是完整音频播放。Agent provider 可选 GLM/Kimi。所有供应商密钥
-只从 Home Agent 环境变量读取，不能进入 APK、管理页响应、日志或仓库。
+Agent provider 可选 GLM/Kimi，均使用 SSE token stream。Home Agent 一收到完整句子（或连续
+40 字）就把该段送入 TTS；LLM producer 与 TTS consumer 通过队列并行，因此后续 token 可在首句
+合成/播放期间继续生成。
 
-家长登录 `/admin/` 可查看 provider 的 `unconfigured / ready / healthy / error` 状态、最近检测
-时间与耗时，主动检测，并切换 ASR/TTS/LLM。切换结果写入服务端数据目录
+TTS 默认 provider 是火山 V3 单向 HTTP 流式接口 `/api/v3/tts/unidirectional`：Home Agent
+使用该 Provider 独立 APP Key，把响应中的逐行 JSON Base64 数据解码为 raw PCM。OpenAI-compatible
+`/audio/speech` 同样使用 raw PCM stream；Piper 以句为单位合成 WAV 后拆成 PCM 块，仍能提前播放首句。媒体协议 v2 用
+`audio.stream.start` 声明 PCM16/sample rate，随后发送约 50 ms 二进制块，以
+`audio.stream.end` 收尾。Android 直接写低延迟 `AudioTrack.MODE_STREAM`，Linux 写入 `aplay`
+stdin；其他桌面平台聚合为 WAV 降级。媒体协议 v1 节点继续接收 `audio.play + WAV`。
+
+所有供应商密钥只归 Home Agent，不能进入 APK、管理页响应、日志或仓库。服务端日志记录
+`asr_ms/llm_first_token_ms/first_audio_ms/total_ms`，不记录音频、识别文字或回复正文。
+
+HomeAdmin 可查看 provider 的 `unconfigured / ready / healthy / error` 状态、最近检测
+时间与耗时。每个 ASR/TTS/LLM Provider 分别管理凭据、模型、语言、音色和有效参数，并能在
+不启用它的情况下单独真实检测；同一供应商的 ASR/TTS 配置也彼此隔离。管理端回显普通参数；
+密钥只显示“已配置”、来源和脱敏尾号，留空表示保留，不能通过读取 API 返回明文。非密钥配置写入
+`voice-provider-config.json`，密钥写入 `voice-provider-secrets.json`，均为 `0600` 且热生效。
+管理员还可切换 ASR/TTS/LLM。切换结果写入服务端数据目录
 `voice-providers.json`，仅保存 provider 名称并设为 `0600`；切换对下一轮语音生效。管理 API
 要求家长 bearer，切换操作写审计日志。
+
+HomeAdmin 的 Provider 卡片提供可观察的交互测试：ASR 由浏览器录音并显示识别文字；TTS 输入指定
+文字后返回并播放 WAV；LLM 输入指定问题后显示模型原始回复和耗时。快速健康检查 API 仍保留给
+自动化运维，但管理页不再只显示笼统的成功/失败。
 
 ## 6. 状态和降级
 

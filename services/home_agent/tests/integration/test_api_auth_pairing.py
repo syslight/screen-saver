@@ -6,7 +6,14 @@ from conftest import bootstrap, login, pair_node
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
-from home_agent.domain.models import AuthSession, Node, PairingCode, User, utc_now
+from home_agent.domain.models import (
+    AuthSession,
+    Node,
+    PairingCode,
+    ParentEnrollmentCode,
+    User,
+    utc_now,
+)
 from home_agent.security import credential_hash
 
 
@@ -97,6 +104,52 @@ def test_pairing_is_one_time_and_database_contains_only_hashes(
             assert node is not None and node.device_key_hash == credential_hash(device_key)
             assert auth_session is not None and token not in auth_session.token_hash
             assert user is not None and "correct-password" not in user.password_hash
+
+    client.portal.call(inspect)
+
+
+def test_parent_app_enrollment_is_one_time_and_creates_named_session(
+    client: TestClient,
+) -> None:
+    bootstrap(client)
+    token = login(client)
+    headers = {"Authorization": f"Bearer {token}"}
+    created = client.post("/api/v1/auth/enrollment-codes", headers=headers)
+    assert created.status_code == 201
+    code = created.json()["code"]
+    assert len(code) == 8
+    enrolled = client.post(
+        "/api/v1/auth/enroll",
+        json={"code": code, "deviceName": "妈妈的手机", "platform": "android"},
+    )
+    assert enrolled.status_code == 200
+    enrolled_token = enrolled.json()["token"]
+    assert (
+        client.get(
+            "/api/v1/nodes", headers={"Authorization": f"Bearer {enrolled_token}"}
+        ).status_code
+        == 200
+    )
+    reused = client.post(
+        "/api/v1/auth/enroll",
+        json={"code": code, "deviceName": "重复手机", "platform": "android"},
+    )
+    assert reused.status_code == 409
+
+    async def inspect() -> None:
+        async with client.app.state.session_factory() as session:
+            enrollment = await session.scalar(
+                select(ParentEnrollmentCode).where(
+                    ParentEnrollmentCode.code_hash == credential_hash(code)
+                )
+            )
+            auth_session = await session.scalar(
+                select(AuthSession).where(AuthSession.token_hash == credential_hash(enrolled_token))
+            )
+            assert enrollment is not None and enrollment.used_at is not None
+            assert auth_session is not None
+            assert auth_session.client_name == "妈妈的手机"
+            assert auth_session.platform == "android"
 
     client.portal.call(inspect)
 

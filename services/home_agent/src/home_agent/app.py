@@ -3,21 +3,33 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 from uuid import uuid4
 
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 
-from home_agent.api import audit, auth, homework, households, nodes, student, websocket
+from home_agent.api import (
+    audit,
+    auth,
+    homework,
+    households,
+    media,
+    nodes,
+    providers,
+    student,
+    websocket,
+)
 from home_agent.config import Settings
 from home_agent.db import create_engine, create_session_factory, upgrade_database
 from home_agent.errors import DomainError
 from home_agent.services.homework_inspector import OpenAICompatibleHomeworkInspector
+from home_agent.services.media_library import MediaLibrary
 from home_agent.services.node_registry import NodeRegistry
 from home_agent.services.rate_limit import InMemoryRateLimiter
+from home_agent.services.voice_agent import VoiceAgentService
+from home_agent.services.voice_providers import VoiceProviderRegistry
 
 
 def _error_body(request: Request, code: str, message: str, details: object) -> dict[str, object]:
@@ -31,9 +43,6 @@ def _error_body(request: Request, code: str, message: str, details: object) -> d
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     configured = settings or Settings()
-    parent_html = (Path(__file__).resolve().parent / "web" / "parent" / "index.html").read_text(
-        encoding="utf-8"
-    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -53,9 +62,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.ready = False
     app.state.node_registry = NodeRegistry()
     app.state.login_limiter = InMemoryRateLimiter(limit=10)
+    app.state.parent_enrollment_limiter = InMemoryRateLimiter(limit=20)
     app.state.pairing_limiter = InMemoryRateLimiter(limit=20)
     app.state.student_pairing_limiter = InMemoryRateLimiter(limit=20)
     app.state.homework_inspector = OpenAICompatibleHomeworkInspector(configured)
+    app.state.media_library = MediaLibrary(configured)
+    app.state.voice_providers = VoiceProviderRegistry(configured)
+    app.state.voice_agent = VoiceAgentService(configured, providers=app.state.voice_providers)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next: object) -> object:
@@ -101,16 +114,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=status, content={"status": "ready" if status == 200 else "starting"}
         )
 
-    @app.get("/parent/", response_class=HTMLResponse, include_in_schema=False)
-    async def parent_console() -> str:
-        return parent_html
-
     app.include_router(auth.router)
     app.include_router(households.router)
     app.include_router(nodes.router)
     app.include_router(audit.router)
-    app.include_router(homework.router)
-    app.include_router(student.router)
+    if configured.deployment_mode == "edge":
+        app.include_router(homework.router)
+        app.include_router(student.router)
+        app.include_router(media.router)
+        app.include_router(providers.router)
     app.include_router(websocket.router)
     return app
 

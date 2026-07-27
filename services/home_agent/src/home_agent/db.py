@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -53,3 +54,7 @@ def alembic_config(settings: Settings) -> Config:
 async def upgrade_database(settings: Settings) -> None:
     settings.ensure_directories()
     await asyncio.to_thread(command.upgrade, alembic_config(settings), "head")
+    if settings.database_url_override is None:
+        database = settings.data_dir / "home_agent.db"
+        if database.exists():
+            os.chmod(database, 0o600)

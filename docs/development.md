@@ -83,6 +83,12 @@ ln -s /home/peidong/source/screen-saver/deploy/home-agent.service \
 systemctl --user daemon-reload
 systemctl --user enable --now home-agent.service
 curl http://127.0.0.1:8790/health/ready
+
+ln -s /home/peidong/source/screen-saver/deploy/home-admin.service \
+  ~/.config/systemd/user/home-admin.service
+systemctl --user daemon-reload
+systemctl --user enable --now home-admin.service
+curl http://127.0.0.1:8800/health/ready
 ```
 
 阿里云控制平面使用 `HOME_AGENT_DEPLOYMENT_MODE=cloud`，参考
@@ -101,8 +107,9 @@ uv run fake-room-node --pairing-code '<一次性配对码>'
 
 终端只显示凭据文件路径，不打印设备密钥；下次启动省略 `--pairing-code` 即可复用设备凭据。
 
-家长作业中心随 Home Agent 一起启动，访问 `http://127.0.0.1:8790/parent/`。开发环境中的
-作业图片写入 `<data_dir>/homework/assets/`，测试使用临时目录，不会写入真实家庭数据。
+HomeAdmin WebUI 由独立服务提供：在 `services/home_admin/` 执行 `uv run home-admin`，访问
+`http://127.0.0.1:8800/`。它只代理 Home Agent API，不连接数据库。开发环境中的作业图片
+仍由 Home Agent 写入 `<data_dir>/homework/assets/`，测试使用临时目录，不会写入真实家庭数据。
 
 可选的作业视觉检查默认关闭。启用 Kimi K3 时设置
 `HOME_AGENT_HOMEWORK_MODEL_ENABLED=true`、`HOME_AGENT_HOMEWORK_MODEL_API_KEY`，默认
@@ -122,14 +129,14 @@ flutter build apk --debug
 
 debug APK 位于 `apps/student/build/app/outputs/flutter-apk/app-debug.apk`。可用
 `adb install -r build/app/outputs/flutter-apk/app-debug.apk` 安装。平板和服务器连接同一可信
-Wi-Fi 后，在家长作业中心生成 8 位一次性码，平板输入 `<服务器局域网 IP>:8790` 完成绑定。
+Wi-Fi 后，在 HomeAdmin 生成 8 位一次性码，平板输入 `<服务器局域网 IP>:8790` 完成绑定。
 当前最低 Android 版本为 6.0（API 23），设备 key 由 `flutter_secure_storage` 存入 Android
 Keystore 支持的安全存储；manifest 禁用应用数据备份，避免 key 随备份迁移。
 
-### 1.7 Android 家长控制端
+### 1.7 HomeAdmin App
 
 ```bash
-cd apps/parent
+cd apps/home_admin
 flutter pub get
 flutter analyze
 flutter test
@@ -137,7 +144,7 @@ flutter build apk --debug
 flutter build apk --release --split-per-abi
 ```
 
-debug APK 位于 `apps/parent/build/app/outputs/flutter-apk/app-debug.apk`。局域网地址自动连接
+debug APK 位于 `apps/home_admin/build/app/outputs/flutter-apk/app-debug.apk`。局域网地址自动连接
 `8790` 做家长认证、连接 `8780/ws` 控制智能屏；HTTPS 地址连接 Cloud Control，通过节点能力
 发现 Home Hub 并转发相册命令。首次空库可在 App 中初始化 edge 家庭；云端新手机用 10 分钟
 单次绑定码。bearer 只存 `flutter_secure_storage`，普通偏好只存非敏感会话元数据。
@@ -194,7 +201,7 @@ unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY all_proxy
 env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u all_proxy /home/peidong/flutter/bin/flutter test
 ```
 
-本机最新实测（2026-07-26）：上述 `env -u` 方式跑 `flutter test`，95 个用例全部通过。
+本机最新实测（2026-07-26）：上述 `env -u` 方式跑 `flutter test`，97 个用例全部通过。
 
 ## 3. 调试
 
@@ -208,7 +215,7 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 | `apps/smart_frame/lib/main.dart:79` | `控制台服务器启动失败: <e>`——端口被占等原因 |
 | `apps/smart_frame/lib/features/voice/application/tts_service.dart:43/142` | edge-tts 失败回退系统 TTS / 系统 TTS 也失败 |
 | Android `ClientManager` / `NativeService` | AILABS 固件原生唤醒 callback 注册、撤销与状态 |
-| Home Agent `voice turn completed` | 服务端 ASR / Agent / TTS 分段耗时，不含原始音频和凭据 |
+| Home Agent `voice stream completed` | `asr_ms/llm_first_token_ms/first_audio_ms/total_ms`，不含原始音频、文字和凭据 |
 
 ### 3.2 语音问题：先看右下角状态文本
 
@@ -222,7 +229,7 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 
 ## 4. 测试说明
 
-`flutter test` 共 95 个用例，全部是纯 Dart 单测（无 widget 测试），不需要真机窗口环境：
+`flutter test` 共 97 个用例，全部是纯 Dart 单测（无 widget 测试），不需要真机窗口环境：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
@@ -232,6 +239,7 @@ env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u al
 | `apps/smart_frame/test/features/calendar/calendar_service_test.dart` | 5 | `calendarInfoFor`：春节（正月初一）、元旦与星期、干支生肖、节气（立春）、普通日星期 |
 | `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 20 | 控制台 HTTP/WS、照片说明、人物档案确认接口、TTS/音乐独立控制、指令广播、上传、NAS 配置与筛选 |
 | `apps/smart_frame/test/features/voice/intent_parser_test.dart` | 10 | 天气/时间/日期/农历/照片/音量/播报/语义筛选/其他意图 |
+| `apps/smart_frame/test/features/voice/streaming_pcm_player_test.dart` | 2 | PCM→WAV 降级头与 Linux PCM16 软件音量缩放 |
 | `apps/smart_frame/test/features/photos/nas_filter_test.dart` | 8 | 关键词、截图命名、`@eaDir`、小文件与禁用时放行 |
 | `apps/smart_frame/test/features/photos/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器 ping/递归列表/下载/认证与空配置 |
 | `apps/smart_frame/test/features/photos/photo_index_service_test.dart` | 8 | hidden/status、标签/人物、人物身份确认/撤销、时间/地点/解说和已确认身份 |

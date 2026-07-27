@@ -22,5 +22,8 @@ smart_frame 的完整文档体系。项目门面（功能介绍、快捷键、�
 另：`docs/superpowers/specs/` 存放设计规格，`docs/superpowers/plans/` 存放实施计划。
 
 当前云端/家庭节点方向见 [家庭云控制平台规格](superpowers/specs/2026-07-26-cloud-control-platform.md)。
+统一管理产品与服务边界见 [HomeAdmin 产品规格](superpowers/specs/2026-07-26-home-admin-product.md)。
+端到端语音延迟与流式媒体边界见
+[端到端流式语音规格](superpowers/specs/2026-07-26-end-to-end-streaming-voice.md)。
 “小方”本地唤醒、自动断句与连续对话见
 [连续家庭语音规格](superpowers/specs/2026-07-26-continuous-family-voice.md)。

@@ -1,0 +1,13 @@
+# 部署前替换为已解析到阿里云 ECS 的真实域名。
+home.example.com {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
+    reverse_proxy 127.0.0.1:8790
+}

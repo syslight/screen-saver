@@ -4,8 +4,8 @@
 
 本仓库也已开始承载独立的家庭 Agent 基础设施：`services/home_agent/` 是本地优先的 Python
 服务端和 Linux 房间节点，`packages/node_protocol/` 是未来 Linux/Android 节点共用的
-Dart 协议包，`apps/student/` 是独立的 Android 学生作业端，`apps/parent/` 是独立的 Android
-家长控制端。现有智能屏仍可独立运行。
+Dart 协议包，`apps/student/` 是独立的 Android 学生作业端，`apps/home_admin/` 是 HomeAdmin
+App，`services/home_admin/` 是同一管理产品的 WebUI/BFF。现有智能屏仍可独立运行。
 
 ![Flutter](https://img.shields.io/badge/Flutter-3.44%2B-02569B?logo=flutter&logoColor=white)
 ![Platform](https://img.shields.io/badge/平台-Windows%20%7C%20macOS%20%7C%20Linux-blue)
@@ -42,6 +42,10 @@ flutter build apk --release   # Android arm64 展示端
 cd services/home_agent
 uv sync --frozen
 uv run home-agent             # 默认 http://127.0.0.1:8790
+
+cd ../home_admin
+uv sync --frozen
+uv run home-admin             # 默认 http://127.0.0.1:8800
 ```
 
 首次启动后通过 `/api/v1/bootstrap` 创建家庭和第一位家长，再由家长创建一次性节点配对码。
@@ -49,8 +53,9 @@ uv run home-agent             # 默认 http://127.0.0.1:8790
 本机默认仍是 HTTP/WS 开发链路。阶段 B 允许学生平板在同一可信家庭 Wi-Fi 内临时使用 HTTP，
 但不得做端口映射或暴露到公网；远程访问前必须配置 HTTPS。
 
-家长作业中心位于 `http://127.0.0.1:8790/parent/`：可录入家庭成员、手动布置作业、管理
-学生平板、上传纸质作业照片并人工确认完成质量。学生 Android App 已支持绑定孩子、查看与
+HomeAdmin WebUI 位于 `http://127.0.0.1:8800/`：先启动 `services/home_admin`，即可录入家庭
+成员、管理 AI provider/密钥、手动布置作业、管理学生平板、上传纸质作业照片并人工确认完成
+质量。学生 Android App 已支持绑定孩子、查看与
 开始任务、拍摄最多 6 页、提交和查看家长反馈；家长 Web 还可逐次授权 Kimi K3 或兼容的
 GLM 视觉模型检查图片。模型默认关闭，检查建议不会自动改变作业状态。
 
@@ -83,10 +88,10 @@ tool/deploy_ccl_android.sh --take-over \
 `--take-over` 使用 Magisk 启动守护在原厂桌面之后拉起相册，不把第三方 Activity 设为 HOME，
 也不 suspend 或卸载原厂持久系统包。恢复原厂 UI 使用 `tool/restore_ccl_vendor_ui.sh`。
 
-家长控制端在家可直连家庭服务器，外网可连接 HTTPS Cloud Control：
+HomeAdmin App 在家可直连家庭服务器，外网可连接 HTTPS Cloud Control：
 
 ```bash
-cd apps/parent
+cd apps/home_admin
 flutter pub get
 flutter analyze
 flutter test
@@ -120,7 +125,9 @@ Home Hub 并通过云端转发结构化命令。已登录家长可生成 10 分�
   空格或控制端手动触发
 - 智能屏只负责按需 PCM 录音和音频播放；`home_agent` 完成服务端自动断句，并在火山流式、
   本地和 OpenAI ASR/TTS 以及 GLM/Kimi Agent provider 间运行时切换（默认火山流式）
-- Home Agent 的 `/admin/` 可查看 provider 配置/健康状态、主动检测并切换 ASR/TTS/LLM
+- 默认链路以约 50 ms PCM 块上传，LLM token 按句触发 TTS，Android/Linux 边接收边播放；
+  旧媒体协议节点继续使用完整 WAV 降级
+- HomeAdmin 管理端可查看 provider 配置/健康状态、主动检测并切换 ASR/TTS/LLM
 - App 不依赖 sherpa/ONNX，不下载任何 KWS/ASR/TTS 模型；空闲时也不上传麦克风音频
 - AILABS_S1L 在厂商账号未登录时不会发出 `start_recording` callback；专用 App 适配器通过
   Magisk 只读订阅固件 `WakeupManager` 的已识别事件，不读取 PCM 或厂商 ASR 文本
@@ -199,8 +206,9 @@ apps/
     lib/features/             相册、语音、天气、日历、远程控制等垂直功能模块
     assets/web_console/       手机控制台单页
   student/                    独立 Android 学生端
-  parent/                     独立 Android 家长控制端（局域网直连 + HTTPS 云控制）
+  home_admin/                 HomeAdmin App（局域网直连 + HTTPS 云控制）
 services/
+  home_admin/                 HomeAdmin WebUI/BFF（不直接访问 Home Agent 数据库）
   home_agent/                 edge/cloud Agent + Linux Room Node + Home Hub Connector
   photo_indexer/              NAS 照片索引与识别守护进程
 packages/node_protocol/       Linux/Android 房间节点共享 Dart 协议模型

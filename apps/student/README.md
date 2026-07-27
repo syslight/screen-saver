@@ -19,7 +19,7 @@ APK：`build/app/outputs/flutter-apk/app-debug.apk`。最低 Android 6.0（API 2
 
 1. 服务器执行 `HOME_AGENT_HOST=0.0.0.0 uv run home-agent`。
 2. 平板与服务器连接同一可信家庭 Wi-Fi，不要映射 8790 到公网。
-3. 家长访问 `http://<服务器IP>:8790/parent/`，录入孩子并在“学生平板”生成一次性码。
+3. 家长访问 HomeAdmin `http://<服务器IP>:8800/`，录入孩子并在“学生平板”生成一次性码。
 4. 平板填写 `<服务器IP>:8790`、配对码和设备名称。
 5. 家长布置任务后，学生端下拉刷新，开始任务并拍照提交。
 

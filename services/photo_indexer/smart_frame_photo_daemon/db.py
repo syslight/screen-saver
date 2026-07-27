@@ -1,7 +1,7 @@
 """共享 SQLite（与 app 共享同一文件）：schema + WAL + 迁移。
 
 库路径与 app 的 main.dart 一致：``~/.local/share/com.example.smart_frame/photo_index.db``。
-守护进程写（WAL），app 只读。
+守护进程写照片索引，app 读取索引并只写家长确认的人物身份与人工隐藏标注；双方通过 WAL 并发。
 """
 import json
 import sqlite3

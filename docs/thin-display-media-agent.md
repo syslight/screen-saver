@@ -69,7 +69,8 @@ Agent 未显式指定目标时，TTS、提示音和与本轮有关的 UI 状态�
 - WebSocket binary frame：与该连接当前 `turnId` 关联的音频帧；
 - `voice.turn.stop`：采集结束；
 - `voice.turn.state`：服务端返回 listening/processing/speaking/idle；
-- `audio.play`：向确定的目标设备下发 TTS 字节长度及 `turnId`，紧随一个二进制 WAV 帧。
+- `audio.stream.start/end`：媒体协议 v2 向确定的目标设备下发 PCM 格式和总长度，中间紧随
+  有序二进制 PCM 块；`audio.play + WAV` 只保留给 v1 节点降级。
 
 首期可以为音频使用独立的已认证 WebSocket，来源身份仍由握手绑定；不要继续使用当前无身份的
 全局 `/api/voice` 管线。服务端必须为每个 `turnId` 保存独立缓冲和状态，TTS 只写回该轮目标连接。
@@ -83,7 +84,7 @@ Agent 未显式指定目标时，TTS、提示音和与本轮有关的 UI 状态�
 - CCL 与 3588 展示端使用同一 Flutter 代码和节点协议，分别生成 Android
   ARMv7 APK 和 Linux arm64 bundle；仅设备凭据、屏幕尺寸及能力声明不同。
 - 原始麦克风音频默认只在家庭局域网传到家庭服务器；日志不保存 PCM，审计只保留必要元数据。
-- 当前默认以火山 ASR 2.0 双向流式识别和火山 V3 双向流式 TTS 提供低延迟语音；CPU
+- 当前默认以火山 ASR 2.0 双向流式识别和火山 V3 单向 HTTP 流式 TTS 提供低延迟语音；CPU
   `faster-whisper small/int8` 与 Piper `zh_CN-huayan-medium` 分别作为本地 ASR/TTS provider；
   只有识别后的文本进入所选 GLM/Kimi Coding API。
 

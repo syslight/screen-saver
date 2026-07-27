@@ -45,6 +45,12 @@ final class NodeEnvelope {
     'command.request',
     'command.result',
     'node.event',
+    'voice.turn.start',
+    'voice.turn.stop',
+    'voice.turn.state',
+    'audio.play',
+    'audio.stream.start',
+    'audio.stream.end',
     'error',
   };
 
@@ -321,6 +327,93 @@ void _validatePayload(String type, Map<String, Object?> payload) {
         throw const ProtocolException(
           'invalid_payload',
           'event data must be an object',
+        );
+      }
+    case 'voice.turn.start':
+      _onlyKeys(payload, {'turnId', 'encoding', 'sampleRate', 'channels'});
+      _string(payload, 'turnId');
+      if (payload['encoding'] != 'pcm_s16le' ||
+          payload['sampleRate'] != 16000 ||
+          payload['channels'] != 1) {
+        throw const ProtocolException(
+          'invalid_payload',
+          'voice input format is invalid',
+        );
+      }
+    case 'voice.turn.stop':
+      _onlyKeys(payload, {'turnId', 'cancelled'});
+      _string(payload, 'turnId');
+      if (payload['cancelled'] != null && payload['cancelled'] is! bool) {
+        throw const ProtocolException(
+          'invalid_payload',
+          'voice turn cancelled flag is invalid',
+        );
+      }
+    case 'voice.turn.state':
+      _onlyKeys(payload, {
+        'turnId',
+        'state',
+        'targetNodeId',
+        'transcript',
+        'reply',
+        'continueDialog',
+      });
+      _string(payload, 'turnId');
+      _string(payload, 'targetNodeId');
+      if (!{
+            'listening',
+            'processing',
+            'speaking',
+            'idle',
+            'error',
+          }.contains(payload['state']) ||
+          payload['transcript'] is! String ||
+          payload['reply'] is! String ||
+          (payload['continueDialog'] != null &&
+              payload['continueDialog'] is! bool)) {
+        throw const ProtocolException(
+          'invalid_payload',
+          'voice turn state is invalid',
+        );
+      }
+    case 'audio.play':
+      _onlyKeys(payload, {'turnId', 'mediaType', 'byteLength'});
+      _string(payload, 'turnId');
+      if (payload['mediaType'] != 'audio/wav' ||
+          payload['byteLength'] is! int ||
+          (payload['byteLength'] as int) < 0) {
+        throw const ProtocolException(
+          'invalid_payload',
+          'audio playback metadata is invalid',
+        );
+      }
+    case 'audio.stream.start':
+      _onlyKeys(payload, {
+        'turnId',
+        'mediaType',
+        'encoding',
+        'sampleRate',
+        'channels',
+      });
+      _string(payload, 'turnId');
+      if (payload['mediaType'] != 'audio/pcm' ||
+          payload['encoding'] != 'pcm_s16le' ||
+          payload['sampleRate'] is! int ||
+          (payload['sampleRate'] as int) < 8000 ||
+          (payload['sampleRate'] as int) > 48000 ||
+          payload['channels'] != 1) {
+        throw const ProtocolException(
+          'invalid_payload',
+          'audio stream metadata is invalid',
+        );
+      }
+    case 'audio.stream.end':
+      _onlyKeys(payload, {'turnId', 'byteLength'});
+      _string(payload, 'turnId');
+      if (payload['byteLength'] is! int || (payload['byteLength'] as int) < 0) {
+        throw const ProtocolException(
+          'invalid_payload',
+          'audio stream completion is invalid',
         );
       }
     case 'error':

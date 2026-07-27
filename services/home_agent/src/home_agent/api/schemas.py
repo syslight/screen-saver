@@ -35,6 +35,17 @@ class LoginResponse(ApiModel):
     household_id: str = Field(alias="householdId")
 
 
+class ParentEnrollmentCodeResponse(ApiModel):
+    code: str
+    expires_at: datetime = Field(alias="expiresAt")
+
+
+class ParentEnrollRequest(ApiModel):
+    code: str = Field(min_length=8, max_length=32)
+    device_name: str = Field(alias="deviceName", min_length=1, max_length=120)
+    platform: str = Field(default="android", min_length=1, max_length=40)
+
+
 class CreateParentRequest(ApiModel):
     username: str = Field(min_length=2, max_length=80)
     password: str = Field(min_length=10, max_length=256)

@@ -14,7 +14,8 @@
 |---|---|---|
 | `apps/smart_frame/` | Flutter 应用 | 智能屏 Linux/macOS/Windows/Android 独立构建单元 |
 | `apps/student/` | Flutter 应用 | 学生 Android 客户端，仅通过 Home Agent HTTP API 通信 |
-| `apps/parent/` | Flutter 应用 | 家长 Android 控制端；Home Agent bearer 登录后连接智能屏 WS |
+| `apps/home_admin/` | Flutter 应用 | HomeAdmin App；家长 bearer 登录后管理家庭并连接智能屏 WS |
+| `services/home_admin/` | Python 服务 | HomeAdmin WebUI/BFF；同源代理 Home Agent API，不访问其数据库 |
 | `services/home_agent/` | Python 服务 | 家庭数据、作业、Agent 和 Room Node 协议的服务端权威实现 |
 | `services/photo_indexer/` | Python 守护进程 | 读取 NAS、写共享照片索引，不承载家庭 Agent API |
 | `packages/node_protocol/` | Dart package | 节点协议信封和 canonical fixtures，不依赖任一应用 |
@@ -136,7 +137,7 @@ AILABS 固件“天猫精灵”KWS ──原生 wake event / EventChannel──�
                                                │           服务端 VAD 自动断句
 VoiceClient ◀──────── processing state ─────────┤           火山流式/本地/OpenAI ASR
   立即释放麦克风                                │           GLM/Kimi Agent
-VoiceClient ◀──────── speaking + TTS bytes ─────┘           火山/Piper/OpenAI TTS
+VoiceClient ◀── speaking + PCM start/chunks/end ─┘           火山/Piper/OpenAI TTS
   播放结束后按 continueDialog 决定是否继续录下一轮
 ```
 
@@ -144,6 +145,8 @@ VoiceClient ◀──────── speaking + TTS bytes ─────┘ 
 
 - App 不包含 sherpa/ONNX、VAD、ASR 或 TTS 合成；固件服务不可用时退化为手动触发。
 - Home Agent 检测尾部静音后发 `processing`，客户端以该服务端状态作为停止录音的依据。
+- LLM token 按句进入 TTS 队列；媒体协议 v2 用 PCM 二进制块边下发边播放，v1 节点使用完整
+  WAV 降级。
 - 节点凭据认证和来源路由保证 TTS 只返回发起本轮的终端。
 
 ## 6. 链路二：手机控制数据流

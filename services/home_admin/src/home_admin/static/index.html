@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>家庭作业中心</title>
+  <title>HomeAdmin</title>
   <style>
     :root { --bg:#f4f1ea; --panel:#fffdf8; --ink:#28332f; --muted:#718078; --brand:#32745d; --danger:#b64a45; --line:#dedbd2; }
     * { box-sizing:border-box; }
@@ -33,13 +33,37 @@
     .badge { padding:3px 8px; border-radius:99px; color:#315348; background:#dfede6; font-size:12px; white-space:nowrap; }
     .images { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; margin-top:10px; }
     .images img { width:100%; aspect-ratio:4/3; object-fit:cover; border-radius:8px; background:#eee; }
+    .cards { display:grid; gap:14px; }
+    .provider-kind { margin-top:18px; }
+    .provider-kind h3 { margin:0 0 9px; }
+    .provider-card { padding:14px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+    .provider-card.active { border-color:#55a283; box-shadow:inset 0 0 0 1px #55a283; }
+    .provider-head { display:flex; justify-content:space-between; gap:10px; }
+    .provider-state { padding:3px 8px; border-radius:99px; background:#edf1ef; font-size:12px; white-space:nowrap; }
+    .provider-state.healthy { color:#18794e; background:#e0f4e9; }
+    .provider-state.error,.provider-state.unconfigured { color:var(--danger); background:#fae8e5; }
+    .provider-state.ready { color:#956400; background:#fbf0cf; }
+    .provider-summary { cursor:pointer; list-style:none; }
+    .provider-summary::-webkit-details-marker { display:none; }
+    .provider-fields { margin-top:14px; padding-top:12px; border-top:1px solid var(--line); }
+    .field-section { margin-top:13px; }
+    .field-section h4 { margin:0 0 8px; }
+    .provider-field { padding:10px; border:1px solid var(--line); border-radius:10px; background:#fbfcfa; }
+    .credential-status { display:block; margin:7px 0; padding:8px 10px; border:1px solid #bad9ca; border-radius:8px; color:#175d43; background:#eaf6ef; font-size:13px; font-weight:700; }
+    .credential-status.missing { color:var(--danger); }
+    .provider-test { margin-top:14px; padding:12px; border:1px solid #c8ddd2; border-radius:10px; background:#f1f8f4; }
+    .provider-test h4 { margin:0 0 8px; }
+    .provider-test-result { min-height:42px; margin:9px 0 0; padding:9px; border-radius:8px; background:#fff; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .provider-test audio { width:100%; margin-top:9px; }
+    .credential-clear { display:flex; align-items:center; gap:6px; margin-top:8px; }
+    .credential-clear input { width:auto; margin:0; }
     #toast { position:fixed; right:16px; bottom:16px; max-width:360px; padding:12px 16px; border-radius:10px; color:#fff; background:#28332f; box-shadow:0 8px 28px #0003; }
     @media (max-width:600px) { .panel { padding:15px; } header { padding:14px 16px; } }
   </style>
 </head>
 <body>
 <header>
-  <h1>家庭作业中心</h1>
+  <h1>HomeAdmin</h1>
   <button id="logout" class="secondary hidden" type="button">退出登录</button>
 </header>
 <main>
@@ -64,6 +88,17 @@
   </section>
 
   <div id="workspace" class="hidden">
+    <section class="panel">
+      <div class="task-head"><div><h2>AI Provider</h2><p class="muted">ASR、TTS、LLM 的每个 Provider 分别保存凭据、模型和参数，并可单独检测。切换对下一轮调用生效。</p></div><button id="providerRefresh" class="secondary" type="button">刷新状态</button></div>
+      <form id="providerSelectionForm" class="grid">
+        <label>ASR Provider<select name="asr"></select></label>
+        <label>TTS Provider<select name="tts"></select></label>
+        <label>LLM Provider<select name="llm"></select></label>
+        <div class="actions"><button>应用 Provider</button></div>
+      </form>
+      <div id="providerCards" class="cards"></div>
+    </section>
+
     <section class="panel">
       <h2>家庭成员</h2>
       <p class="muted">成员姓名仅用于家庭内展示；先录入 5 岁和 10 岁两个孩子。</p>
@@ -116,9 +151,10 @@
 <div id="toast" class="hidden"></div>
 <script>
 const api = '/api/v1';
-let token = sessionStorage.getItem('homeAgentParentToken') || '';
+let token = sessionStorage.getItem('homeAdminToken') || '';
 let members = [];
 let taskCache = [];
+let providerSnapshot = null;
 let modelStatus = {enabled:false,configured:false,modelName:'kimi-k3',baseUrlHost:null};
 const $ = s => document.querySelector(s);
 const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -134,12 +170,12 @@ async function request(path, options={}) {
   const headers = new Headers(options.headers || {});
   if (token) headers.set('Authorization', 'Bearer ' + token);
   if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json');
-  const response = await fetch(api + path, {...options, headers});
+  const response = await fetch(api + path, {...options, headers, cache:'no-store'});
   if (response.status === 204) return null;
   const type = response.headers.get('content-type') || '';
   const data = type.includes('json') ? await response.json() : await response.text();
   if (!response.ok) {
-    if (response.status === 401 && token) { token=''; sessionStorage.removeItem('homeAgentParentToken'); showAuth(); }
+    if (response.status === 401 && token) { token=''; sessionStorage.removeItem('homeAdminToken'); showAuth(); }
     throw new Error(data.message || data.detail || `请求失败 (${response.status})`);
   }
   return data;
@@ -156,7 +192,7 @@ function showWorkspace() { $('#authPanel').classList.add('hidden'); $('#workspac
 
 async function login(username, password) {
   const data = await request('/auth/login', {method:'POST', body:JSON.stringify({username,password})});
-  token = data.token; sessionStorage.setItem('homeAgentParentToken', token); showWorkspace(); await loadAll();
+  token = data.token; sessionStorage.setItem('homeAdminToken', token); showWorkspace(); await loadAll();
 }
 
 $('#loginForm').addEventListener('submit', async event => {
@@ -170,7 +206,148 @@ $('#bootstrapForm').addEventListener('submit', async event => {
   catch(e) { $('#authError').textContent=e.message; }
 });
 
-$('#logout').addEventListener('click', async () => { try { await request('/auth/logout',{method:'POST'}); } catch (_) {} token=''; sessionStorage.removeItem('homeAgentParentToken'); showAuth(); });
+$('#logout').addEventListener('click', async () => { try { await request('/auth/logout',{method:'POST'}); } catch (_) {} token=''; sessionStorage.removeItem('homeAdminToken'); showAuth(); });
+
+const providerKindLabel={asr:'语音识别 ASR',tts:'语音合成 TTS',llm:'大语言模型 LLM'};
+const providerSectionLabel={credential:'连接凭据',model:'模型与语言',voice:'音色与角色',parameter:'生成参数',advanced:'高级连接参数'};
+
+function providerField(kind,item,field,index) {
+  const id=`provider-${kind}-${item.name}-${field.name}-${index}`;
+  const required=field.required && !(field.secret && field.configured)?'required':'';
+  const help=field.help?`<span class="muted">${esc(field.help)}</span>`:'';
+  const source=field.source==='managed'?'后台保存':field.source==='environment'?'环境变量':'未设置';
+  const configured=field.secret?`<span class="credential-status ${field.configured?'':'missing'}">${field.configured?`已配置 ${esc(field.hint||'已脱敏')} · ${source}`:'尚未配置'}</span>`:'';
+  let control='';
+  if(field.type==='boolean') {
+    control=`<input id="${esc(id)}" data-provider-field="${esc(field.name)}" data-field-type="boolean" type="checkbox" ${field.value?'checked':''}>`;
+  } else if(field.type==='select' && !field.allowCustom) {
+    control=`<select id="${esc(id)}" data-provider-field="${esc(field.name)}" data-field-type="${esc(field.type)}" ${required}>${(field.options||[]).map(option=>`<option value="${esc(option.value)}" ${String(option.value)===String(field.value)?'selected':''}>${esc(option.label)}</option>`).join('')}</select>`;
+  } else {
+    const type=field.secret && !field.configured?'password':field.type==='number'?'number':'text';
+    const list=(field.options||[]).length?`${id}-choices`:'';
+    const value=field.secret?(field.configured?field.hint||'已脱敏':''):field.value??'';
+    const placeholder=field.secret?(field.configured?'输入新值可替换；留空保留现有值':'请输入凭据'):'';
+    const bounds=field.type==='number'?`${field.min!=null?`min="${esc(field.min)}"`:''} ${field.max!=null?`max="${esc(field.max)}"`:''} step="any"`:'';
+    const secretHint=field.secret && field.configured?`data-secret-hint="${esc(field.hint||'已脱敏')}"`:'';
+    control=`<input id="${esc(id)}" data-provider-field="${esc(field.name)}" data-field-type="${esc(field.type)}" ${secretHint} type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${list?`list="${esc(list)}"`:''} ${bounds} ${required} autocomplete="${field.secret?'new-password':'off'}">${list?`<datalist id="${esc(list)}">${field.options.map(option=>`<option value="${esc(option.value)}">${esc(option.label)}</option>`).join('')}</datalist>`:''}`;
+  }
+  const clear=field.secret?`<span class="credential-clear"><input type="checkbox" data-clear-field="${esc(field.name)}">清除此 Provider 的现有值</span>`:'';
+  return `<label class="provider-field" for="${esc(id)}">${esc(field.label)}${field.required?' *':''}${configured}${control}${help}${clear}</label>`;
+}
+
+function providerTestPanel(kind,item) {
+  const disabled=item.configured?'':'disabled';
+  if(kind==='asr') return `<section class="provider-test" data-provider-test data-kind="${kind}" data-provider="${esc(item.name)}"><h4>实际语音识别测试</h4><p class="muted">点击录音并说出测试内容，再次点击停止；系统会显示真实识别结果。</p><div class="actions"><button type="button" data-asr-record ${disabled}>开始录音</button></div><div class="provider-test-result" data-test-result>尚未测试</div></section>`;
+  const label=kind==='tts'?'要合成并播放的文字':'要发送给模型的问题';
+  const value=kind==='tts'?'小方语音服务测试。':'请用一句话介绍你自己。';
+  return `<section class="provider-test" data-provider-test data-kind="${kind}" data-provider="${esc(item.name)}"><h4>${kind==='tts'?'实际语音合成测试':'实际模型对话测试'}</h4><label>${label}<textarea data-test-input>${esc(value)}</textarea></label><div class="actions"><button type="button" data-provider-test-run ${disabled}>执行测试</button></div>${kind==='tts'?'<audio controls class="hidden" data-test-audio></audio>':''}<div class="provider-test-result" data-test-result>尚未测试</div></section>`;
+}
+
+function providerCard(kind, item) {
+  const checked=item.lastCheckedAt?new Date(item.lastCheckedAt).toLocaleString():'尚未检测';
+  const state={healthy:'正常',error:'异常',ready:'待检测',unconfigured:'未配置'}[item.state]||item.state;
+  const fields=item.fields||[];
+  const sections=Object.keys(providerSectionLabel).filter(section=>fields.some(field=>field.section===section)).map(section=>`<div class="field-section"><h4>${providerSectionLabel[section]}</h4><div class="grid">${fields.filter(field=>field.section===section).map((field,index)=>providerField(kind,item,field,index)).join('')}</div></div>`).join('');
+  const detail=[`模型 ${item.model}`,item.voice?`角色 ${item.voice}`:'',item.language?`语言 ${item.language}`:'',item.streaming?'流式接口':''].filter(Boolean).join(' · ');
+  return `<details class="provider-card ${item.active?'active':''}" ${item.active?'open':''}><summary class="provider-summary"><div class="provider-head"><b>${esc(item.label)}</b><span class="provider-state ${esc(item.state)}">${esc(state)}</span></div><p class="muted">${esc(detail)}<br>${item.active?'当前启用 · ':''}${item.configured?'配置完整':'缺少凭据或本地模型'} · ${esc(checked)}${item.latencyMs!=null?` · ${item.latencyMs} ms`:''}${item.message?`<br>${esc(item.message)}`:''}</p></summary><form class="provider-fields" data-provider-config data-kind="${esc(kind)}" data-provider="${esc(item.name)}">${sections}<div class="actions"><button type="submit">保存此 Provider</button></div>${providerTestPanel(kind,item)}</form></details>`;
+}
+
+function renderProviders(data) {
+  providerSnapshot=data;
+  for(const kind of ['asr','tts','llm']) {
+    const select=$(`#providerSelectionForm [name=${kind}]`);
+    select.innerHTML=data.providers[kind].map(item=>`<option value="${esc(item.name)}">${esc(item.label)}</option>`).join('');
+    select.value=data.selection[kind];
+  }
+  $('#providerCards').innerHTML=['asr','tts','llm'].map(kind=>`<section class="provider-kind"><h3>${providerKindLabel[kind]}</h3>${data.providers[kind].map(item=>providerCard(kind,item)).join('')}</section>`).join('');
+  document.querySelectorAll('[data-provider-config]').forEach(form=>form.addEventListener('submit',saveProviderConfiguration));
+  document.querySelectorAll('[data-provider-test-run]').forEach(button=>button.addEventListener('click',runTextProviderTest));
+  document.querySelectorAll('[data-asr-record]').forEach(button=>button.addEventListener('click',toggleAsrRecording));
+  document.querySelectorAll('[data-clear-field]').forEach(input=>input.addEventListener('change',event=>{
+    const field=event.currentTarget.closest('.provider-field').querySelector('[data-provider-field]'); field.disabled=event.currentTarget.checked;
+  }));
+  document.querySelectorAll('[data-secret-hint]').forEach(input=>{
+    input.addEventListener('focus',()=>{ if(input.value===input.dataset.secretHint){ input.value=''; input.type='password'; } });
+    input.addEventListener('blur',()=>{ if(!input.value){ input.value=input.dataset.secretHint; input.type='text'; } });
+  });
+}
+
+async function loadProviders() { renderProviders(await request('/admin/providers')); }
+
+async function checkProvider(event) {
+  const button=event.currentTarget; const [kind,name]=button.dataset.providerCheck.split(':'); button.disabled=true;
+  try { renderProviders(await request('/admin/providers/check',{method:'POST',body:JSON.stringify({kind,name})})); toast('Provider 检测完成'); }
+  catch(e) { toast(e.message,true); await loadProviders().catch(()=>{}); }
+  finally { button.disabled=false; }
+}
+
+let activeAsrRecording=null;
+
+function pcmBase64(chunks,inputRate) {
+  const total=chunks.reduce((sum,chunk)=>sum+chunk.length,0); const merged=new Float32Array(total); let offset=0;
+  for(const chunk of chunks){merged.set(chunk,offset);offset+=chunk.length;}
+  const ratio=inputRate/16000; const output=new Int16Array(Math.floor(merged.length/ratio));
+  for(let i=0;i<output.length;i++){const sample=Math.max(-1,Math.min(1,merged[Math.floor(i*ratio)]||0));output[i]=sample<0?sample*32768:sample*32767;}
+  const bytes=new Uint8Array(output.buffer); let binary='';
+  for(let i=0;i<bytes.length;i+=32768) binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
+  return btoa(binary);
+}
+
+async function executeProviderTest(panel,body) {
+  const result=panel.querySelector('[data-test-result]'); result.textContent='测试中…';
+  try {
+    const data=await request('/admin/providers/test',{method:'POST',body:JSON.stringify({kind:panel.dataset.kind,name:panel.dataset.provider,...body})});
+    if(data.audioBase64){const audio=panel.querySelector('[data-test-audio]');audio.src=`data:${data.audioMimeType||'audio/wav'};base64,${data.audioBase64}`;audio.classList.remove('hidden');await audio.play().catch(()=>{});result.textContent=`语音已生成，可用上方播放器重播（${data.latencyMs} ms）`;}
+    else result.textContent=(data.text&&data.text.trim())?`${data.text}\n\n耗时：${data.latencyMs} ms`:`未识别到文字\n\n耗时：${data.latencyMs} ms`;
+  } catch(e) { result.textContent=`测试失败：${e.message}`; }
+}
+
+function runTextProviderTest(event) {
+  const panel=event.currentTarget.closest('[data-provider-test]'); const text=panel.querySelector('[data-test-input]').value.trim();
+  if(!text){toast('请先输入测试内容',true);return;} executeProviderTest(panel,{text});
+}
+
+async function toggleAsrRecording(event) {
+  const button=event.currentTarget; const panel=button.closest('[data-provider-test]');
+  if(activeAsrRecording){
+    if(activeAsrRecording.panel!==panel){toast('请先结束另一个录音测试',true);return;}
+    const recording=activeAsrRecording; activeAsrRecording=null; clearTimeout(recording.timer); recording.processor.disconnect(); recording.source.disconnect(); recording.stream.getTracks().forEach(track=>track.stop()); await recording.context.close(); button.textContent='开始录音'; button.disabled=true;
+    try { await executeProviderTest(panel,{audioBase64:pcmBase64(recording.chunks,recording.sampleRate)}); } finally { button.disabled=false; }
+    return;
+  }
+  try {
+    const stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,echoCancellation:true,noiseSuppression:true}}); const context=new AudioContext(); const source=context.createMediaStreamSource(stream); const processor=context.createScriptProcessor(4096,1,1); const chunks=[];
+    processor.onaudioprocess=e=>chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); source.connect(processor); processor.connect(context.destination); button.textContent='停止并识别'; panel.querySelector('[data-test-result]').textContent='录音中，请说出测试内容…';
+    activeAsrRecording={panel,button,stream,context,source,processor,chunks,sampleRate:context.sampleRate,timer:setTimeout(()=>button.click(),8000)};
+  } catch(e) { panel.querySelector('[data-test-result]').textContent=`无法录音：${e.message}`; }
+}
+
+$('#providerSelectionForm').addEventListener('submit', async event => {
+  event.preventDefault(); const body=Object.fromEntries(new FormData(event.currentTarget));
+  try { renderProviders(await request('/admin/providers/selection',{method:'PUT',body:JSON.stringify(body)})); toast('Provider 已切换'); }
+  catch(e) { toast(e.message,true); }
+});
+
+async function saveProviderConfiguration(event) {
+  event.preventDefault(); const form=event.currentTarget; const values={};
+  for(const field of form.querySelectorAll('[data-provider-field]')) {
+    if(field.disabled) continue;
+    const type=field.dataset.fieldType; const raw=type==='boolean'?'':String(field.value).trim();
+    if(type!=='boolean' && !raw) continue;
+    if(type==='secret' && field.dataset.secretHint && raw===field.dataset.secretHint) continue;
+    let value=type==='boolean'?field.checked:raw;
+    if(type==='secret' && !value) continue;
+    if(type==='number') value=Number(value);
+    if(value!=='' && !(type==='number' && Number.isNaN(value))) values[field.dataset.providerField]=value;
+  }
+  const clear=[...form.querySelectorAll('[data-clear-field]:checked')].map(input=>input.dataset.clearField);
+  try {
+    renderProviders(await request(`/admin/providers/${encodeURIComponent(form.dataset.kind)}/${encodeURIComponent(form.dataset.provider)}/configuration`,{method:'PUT',body:JSON.stringify({values,clear})}));
+    toast('Provider 配置已保存');
+  } catch(e) { toast(e.message,true); }
+}
+
+$('#providerRefresh').addEventListener('click',()=>loadProviders().catch(e=>toast(e.message,true)));
 
 async function loadMembers() {
   members = await request('/homework/members');
@@ -304,7 +481,7 @@ async function review(event, submissionId) {
   catch(e) { toast(e.message,true); }
 }
 
-async function loadAll() { await loadMembers(); await Promise.all([loadStudentDevices(),loadModelStatus(),loadTasks()]); }
+async function loadAll() { await Promise.all([loadProviders(),loadMembers()]); await Promise.all([loadStudentDevices(),loadModelStatus(),loadTasks()]); }
 $('#refresh').addEventListener('click', loadAll);
 (async()=>{ if(!token){showAuth();return;} try{showWorkspace();await loadAll();}catch(e){toast(e.message,true);} })();
 </script>

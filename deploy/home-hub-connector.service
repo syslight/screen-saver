@@ -1,0 +1,17 @@
+[Unit]
+Description=Family Home Hub Cloud Connector
+After=network-online.target home-agent.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/peidong/source/screen-saver/services/home_agent
+EnvironmentFile=%h/.config/family-home-hub.env
+ExecStart=/home/peidong/.local/bin/uv run home-hub-connector --cloud=${HOME_CLOUD_URL}
+Restart=always
+RestartSec=5
+StandardOutput=append:%h/.local/share/family-home-agent/cloud-connector.log
+StandardError=append:%h/.local/share/family-home-agent/cloud-connector.log
+
+[Install]
+WantedBy=default.target

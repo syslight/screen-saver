@@ -1,0 +1,22 @@
+[Unit]
+Description=Family Cloud Control Plane
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=smart-frame
+Group=smart-frame
+WorkingDirectory=/opt/smart-frame/services/home_agent
+EnvironmentFile=/etc/family-cloud-control.env
+ExecStart=/usr/local/bin/uv run home-agent
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/family-cloud-control
+
+[Install]
+WantedBy=multi-user.target

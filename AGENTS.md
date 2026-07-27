@@ -9,7 +9,7 @@
 Monorepo 当前包含 Flutter 全屏智能屏，以及独立的家庭 Agent 基础设施。智能屏目标平台
 Windows / macOS / Linux / Android，包名 `smart_frame`，Flutter 3.44+（stable）；家庭 Agent
 使用 Python 3.12 + uv，通过版本化 HTTP/WebSocket 协议连接 Linux/Android 房间节点；
-`apps/student/` 是独立的 Flutter Android 学生作业端，`apps/parent/` 是独立的家长控制端。
+`apps/student/` 是独立的 Flutter Android 学生作业端，`apps/home_admin/` 是 HomeAdmin App。
 
 ## 构建与命令
 
@@ -75,10 +75,10 @@ apps/
     assets/web_console/       手机控制台单页（原生 JS，打包进 assets）
     test/                     与 core/features 镜像组织的 11 个 Dart 测试文件
   student/                    独立 Flutter Android 学生端；设备配对、作业、拍照提交和审核结果
-  parent/                     独立 Flutter Android 家长端；局域网直连、云绑定和 Home Hub 控制
+  home_admin/                 HomeAdmin Flutter App；局域网直连、云绑定和 Home Hub 控制
 services/
+  home_admin/                 HomeAdmin WebUI/BFF；只调用 Home Agent API，不直接读写其数据库
   home_agent/                 edge/cloud Agent + Linux Room Node + Home Hub Connector；独立 uv 环境
-    src/home_agent/web/parent/ 家长作业中心静态单页
   photo_indexer/              照片索引守护进程（dinov2/CLIP/insightface/VLM）
 packages/node_protocol/       节点协议 Dart 模型、共享 canonical fixtures 与合约测试
 deploy/                       systemd user unit
@@ -92,7 +92,9 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 - **改代码后必须验证**：智能屏改动需 `flutter analyze` 无问题且 `flutter test` 全绿；
   `services/home_agent/` 改动还必须执行 `uv run ruff check .`、`uv run ruff format --check .`、
   `uv run mypy src`、`uv run pytest --cov=home_agent --cov=linux_room_node --cov=home_hub_connector`；
-  `apps/student/`、`apps/parent/` 改动执行各自目录下的 `flutter analyze`、`flutter test`，涉及 Android 插件或
+  `services/home_admin/` 改动执行 `uv run ruff check .`、`uv run ruff format --check .`、
+  `uv run mypy src`、`uv run pytest`；`apps/student/`、`apps/home_admin/` 改动执行各自目录下的
+  `flutter analyze`、`flutter test`，涉及 Android 插件或
   manifest 时还要构建 APK；`packages/node_protocol/` 改动执行 `dart analyze` 与 `dart test`。
   各语言/包边界互不代替验收。
 - **指令统一入口**：现状——手机 WS 指令统一经 `CommandService`（`apps/smart_frame/lib/features/remote_control/application/command_service.dart`）总线处理，执行后经 WebSocket 广播状态给全部手机端；键盘快捷键为直连服务的历史实现（`apps/smart_frame/lib/features/dashboard/presentation/dashboard_page.dart`：←/→ 直连 `PhotoService`、空格调用当前 `VoiceProvider.triggerListen`，不经总线、不触发广播）。规范——新增指令应接入 `CommandService` 总线，不得绕过它直接操作服务，以便状态广播到全部手机端。
@@ -106,7 +108,7 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
   `docs/home-agent-protocol.md`、Python 合约测试与 `packages/node_protocol/` Dart 合约测试。
 - **学生权限边界**：学生端必须使用独立 `Student` device key，不能保存或复用家长 bearer；
   学生任务响应不得包含 `referenceAnswer`、`rubric` 或其他孩子信息。更换孩子必须撤销后重配。
-- **家长端认证边界**：家长端 bearer 只能存 `flutter_secure_storage`，不得写普通偏好设置或日志；
+- **HomeAdmin 认证边界**：家长 bearer 只能存 `flutter_secure_storage`，不得写普通偏好设置或日志；
   可信局域网由家长登录后直连同主机 8780；外网只能连接 HTTPS Cloud Control，通过节点能力路由
   到 Home Hub。家庭 8780/8790 不得暴露公网，云端不得增加原始家庭音视频转发命令。
 - 本项目是 git 仓库，托管在 GitHub 私有仓库 `screen-saver`；`git commit` / `push` 等变更操作必须先经用户确认，不要自动执行。
@@ -169,7 +171,7 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 
 ## 测试地图
 
-`flutter test` 共 95 个用例，全部是纯 Dart 单测（无 widget 测试）：
+`flutter test` 共 97 个用例，全部是纯 Dart 单测（无 widget 测试）：
 
 | 文件 | 用例数 | 覆盖 |
 |---|---|---|
@@ -179,6 +181,7 @@ NAS 图源引入新依赖 `webdav_client`（`apps/smart_frame/pubspec.yaml`）�
 | `apps/smart_frame/test/features/remote_control/control_server_test.dart` | 20 | 控制台页、照片/人物 API、WS 状态与指令广播、TTS 与音乐独立音量、上传、NAS 配置和筛选 |
 | `apps/smart_frame/test/features/music/music_service_test.dart` | 2 | 跨午夜夜间静音与音乐/TTS ducking |
 | `apps/smart_frame/test/features/voice/native_wake_word_test.dart` | 2 | Android 原生唤醒可用状态与唤醒事件解析 |
+| `apps/smart_frame/test/features/voice/streaming_pcm_player_test.dart` | 2 | PCM→WAV 降级头与 Linux PCM16 软件音量缩放 |
 | `apps/smart_frame/test/features/voice/intent_parser_test.dart` | 10 | `parseIntent`：天气 / 时间 / 日期 / 农历 / 照片切换 / 音量 / 播报 / 语义筛选与清除 / 其他（显示二维码、帮助、未知）/ 带标点结尾 |
 | `apps/smart_frame/test/features/photos/nas_filter_test.dart` | 8 | `nasPhotoAllowed`：关键词命中路径任意段排除（大小写不敏感）、内置截图文件名正则、普通照片放行、`enabled=false` 全放行、keywords 替换语义、空串关键词跳过、`@eaDir` 段排除、小文件（size<minBytes）排除 |
 | `apps/smart_frame/test/features/photos/nas_photo_source_test.dart` | 4 | 假 WebDAV 服务器（`dart:io HttpServer`）端到端：ping + 递归列出（截图被过滤且计入 `lastFilteredCount`）、downloadTo 写盘长度正确、401 时 ping 抛异常、未 configure/remoteDir 空返回空 |

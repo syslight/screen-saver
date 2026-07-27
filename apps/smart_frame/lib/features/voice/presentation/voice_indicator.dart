@@ -10,7 +10,7 @@ class VoiceIndicator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final voice = context.watch<VoiceProvider>();
-    final text = voice.statusMessage ?? voice.stateText;
+    final text = voiceDisplayText(voice.stateText, voice.statusMessage);
     final (icon, color) = switch (text) {
       String s when s.contains('聆听') => (Icons.mic, Colors.redAccent),
       String s when s.contains('识别') => (

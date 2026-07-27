@@ -1,0 +1,17 @@
+[Unit]
+Description=HomeAdmin WebUI and BFF
+After=network-online.target home-agent.service
+Wants=network-online.target home-agent.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/peidong/source/screen-saver/services/home_admin
+ExecStart=/home/peidong/.local/bin/uv run home-admin
+Environment=HOME_ADMIN_HOST=127.0.0.1
+Environment=HOME_ADMIN_PORT=8800
+Environment=HOME_ADMIN_HOME_AGENT_URL=http://127.0.0.1:8790
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

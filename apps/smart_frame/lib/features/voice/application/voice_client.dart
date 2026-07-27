@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 import 'package:web_socket_channel/io.dart';
 
 import 'package:smart_frame/features/voice/application/native_wake_word.dart';
+import 'package:smart_frame/features/voice/application/streaming_pcm_player.dart';
 import 'package:smart_frame/features/voice/application/voice_provider.dart';
 
 /// 展示节点语音瘦客户端：只采集 PCM，并播放家庭 Agent 返回的 TTS。
@@ -45,6 +46,7 @@ class VoiceClient extends VoiceProvider {
   Timer? _reconnectTimer;
   Timer? _followupTimer;
   final AudioPlayer _player = AudioPlayer();
+  final StreamingPcmPlayer _streamPlayer = StreamingPcmPlayer();
   final Random _random = Random.secure();
   String? _activeTurn;
   int _sequence = 0;
@@ -53,6 +55,8 @@ class VoiceClient extends VoiceProvider {
   bool _ttsPlaybackActive = false;
   bool _continueDialog = true;
   bool _closed = false;
+  String? _audioStreamTurn;
+  int _audioStreamBytes = 0;
 
   Future<void> init() async {
     _recorder = AudioRecorder();
@@ -76,6 +80,10 @@ class VoiceClient extends VoiceProvider {
 
   void _handleNativeWake(NativeWakeEvent event) {
     if (event.type == NativeWakeEventType.wake) {
+      wakeWordReady = true;
+      statusMessage = null;
+      stateText = '已唤醒，准备聆听…';
+      notifyListeners();
       unawaited(_beginTurn());
       return;
     }
@@ -117,13 +125,16 @@ class VoiceClient extends VoiceProvider {
         'deviceKey': deviceKey,
         'softwareVersion': '1.0.0',
         'platform': 'flutter-display',
-        'mediaProtocolVersion': 1,
+        'mediaProtocolVersion': 2,
       });
       stateText = _idleText;
       if (wakeWordReady) statusMessage = null;
       notifyListeners();
       _wsSub = channel.stream.listen(
-        _handleMessage,
+        (message) {
+          _wsSub?.pause();
+          unawaited(_handleMessageSerial(message));
+        },
         onDone: _disconnect,
         onError: (_) => _disconnect(),
       );
@@ -135,45 +146,114 @@ class VoiceClient extends VoiceProvider {
     }
   }
 
-  void _handleMessage(dynamic message) {
+  Future<void> _handleMessageSerial(dynamic message) async {
+    try {
+      await _handleMessage(message);
+    } catch (error) {
+      await _streamPlayer.cancel();
+      _audioStreamTurn = null;
+      _ttsPlaybackActive = false;
+      statusMessage = '流式语音播放失败: $error';
+      notifyListeners();
+    } finally {
+      if (!_closed) _wsSub?.resume();
+    }
+  }
+
+  Future<void> _handleMessage(dynamic message) async {
     if (message is List<int>) {
-      unawaited(_playTts(Uint8List.fromList(message)));
+      final bytes = Uint8List.fromList(message);
+      if (_audioStreamTurn != null) {
+        _audioStreamBytes += bytes.length;
+        await _streamPlayer.write(bytes);
+      } else {
+        await _playTts(bytes);
+      }
       return;
     }
     if (message is! String) return;
+    late final Map<String, dynamic> envelope;
     try {
-      final envelope = jsonDecode(message) as Map<String, dynamic>;
-      final payload = envelope['payload'] as Map<String, dynamic>? ?? const {};
-      if (envelope['type'] != 'voice.turn.state') return;
-      final state = payload['state'] as String?;
-      stateText = switch (state) {
-        'listening' => '聆听中…',
-        'processing' => '识别中…',
-        'speaking' => '播报中…',
-        'error' => '语音服务异常',
-        _ => '待唤醒',
-      };
-      lastHeard = payload['transcript'] as String? ?? lastHeard;
-      lastReply = payload['reply'] as String? ?? lastReply;
-      _continueDialog = payload['continueDialog'] as bool? ?? _continueDialog;
-      if (state == 'processing') {
-        unawaited(_stopMicrophone());
-      } else if (state == 'idle') {
-        unawaited(_stopMicrophone());
-        _activeTurn = null;
-        _capturing = false;
-        _serverIdle = true;
-        stateText = _continueDialog ? '等待继续说…' : _idleText;
-        unawaited(_maybeStartFollowup());
-      } else if (state == 'error') {
-        unawaited(_stopMicrophone());
-        _activeTurn = null;
-        _capturing = false;
-        _serverIdle = false;
-        _continueDialog = false;
+      envelope = jsonDecode(message) as Map<String, dynamic>;
+    } on FormatException {
+      return;
+    } on TypeError {
+      return;
+    }
+    final payload = envelope['payload'] as Map<String, dynamic>? ?? const {};
+    final type = envelope['type'] as String?;
+    if (type == 'audio.stream.start') {
+      await _startTtsStream(payload);
+      return;
+    }
+    if (type == 'audio.stream.end') {
+      await _finishTtsStream(payload);
+      return;
+    }
+    if (type != 'voice.turn.state') return;
+    final state = payload['state'] as String?;
+    stateText = switch (state) {
+      'listening' => '聆听中…',
+      'processing' => '识别中…',
+      'speaking' => '播报中…',
+      'error' => '语音服务异常',
+      _ => '待唤醒',
+    };
+    if (state != 'error') statusMessage = null;
+    lastHeard = payload['transcript'] as String? ?? lastHeard;
+    lastReply = payload['reply'] as String? ?? lastReply;
+    _continueDialog = payload['continueDialog'] as bool? ?? _continueDialog;
+    if (state == 'processing') {
+      unawaited(_stopMicrophone());
+    } else if (state == 'idle') {
+      unawaited(_stopMicrophone());
+      _activeTurn = null;
+      _capturing = false;
+      _serverIdle = true;
+      stateText = _continueDialog ? '等待继续说…' : _idleText;
+      unawaited(_maybeStartFollowup());
+    } else if (state == 'error') {
+      unawaited(_stopMicrophone());
+      _activeTurn = null;
+      _capturing = false;
+      _serverIdle = false;
+      _continueDialog = false;
+    }
+    notifyListeners();
+  }
+
+  Future<void> _startTtsStream(Map<String, dynamic> payload) async {
+    final turnId = payload['turnId'] as String?;
+    final sampleRate = payload['sampleRate'] as int?;
+    final channels = payload['channels'] as int?;
+    if (turnId == null || sampleRate == null || channels != 1) return;
+    await _stopMicrophone();
+    await _player.stop();
+    _ttsPlaybackActive = true;
+    _audioStreamTurn = turnId;
+    _audioStreamBytes = 0;
+    await _streamPlayer.start(
+      sampleRate: sampleRate,
+      channels: 1,
+      volume: volume,
+    );
+  }
+
+  Future<void> _finishTtsStream(Map<String, dynamic> payload) async {
+    final turnId = payload['turnId'] as String?;
+    if (turnId == null || turnId != _audioStreamTurn) return;
+    final expectedBytes = payload['byteLength'] as int?;
+    try {
+      await _streamPlayer.finish();
+      if (expectedBytes != null && expectedBytes != _audioStreamBytes) {
+        statusMessage = '语音流不完整，已播放收到的内容';
       }
-      notifyListeners();
-    } catch (_) {}
+    } finally {
+      _audioStreamTurn = null;
+      _audioStreamBytes = 0;
+      _ttsPlaybackActive = false;
+      await _maybeStartFollowup();
+    }
   }
 
   Future<void> _playTts(Uint8List bytes) async {
@@ -213,6 +293,7 @@ class VoiceClient extends VoiceProvider {
       _capturing = true;
       _serverIdle = false;
       _continueDialog = true;
+      statusMessage = null;
       stateText = '聆听中…';
       notifyListeners();
       _sendEnvelope('voice.turn.start', {
@@ -242,6 +323,9 @@ class VoiceClient extends VoiceProvider {
         encoder: AudioEncoder.pcm16bits,
         sampleRate: 16000,
         numChannels: 1,
+        streamBufferSize: 1600,
+        echoCancel: true,
+        noiseSuppress: true,
       ),
     );
     _capturing = true;
@@ -317,6 +401,11 @@ class VoiceClient extends VoiceProvider {
     _capturing = false;
     _serverIdle = false;
     _continueDialog = false;
+    _ttsPlaybackActive = false;
+    _audioStreamTurn = null;
+    _audioStreamBytes = 0;
+    unawaited(_streamPlayer.cancel());
+    unawaited(_player.stop());
     stateText = '已断开';
     notifyListeners();
     _reconnectTimer?.cancel();
@@ -334,6 +423,7 @@ class VoiceClient extends VoiceProvider {
     _wsSub?.cancel();
     _ws?.sink.close();
     _player.dispose();
+    unawaited(_streamPlayer.dispose());
     super.dispose();
   }
 }

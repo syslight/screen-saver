@@ -89,6 +89,72 @@
       "roomId": null,
       "sessionId": null,
       "payload": {"code": "example", "message": "Example error", "details": {}}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000012",
+      "sequence": 6,
+      "type": "voice.turn.start",
+      "sentAt": "2026-07-24T12:00:07Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"turnId": "turn-voice-0001", "encoding": "pcm_s16le", "sampleRate": 16000, "channels": 1}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000013",
+      "sequence": 7,
+      "type": "voice.turn.stop",
+      "sentAt": "2026-07-24T12:00:08Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"turnId": "turn-voice-0001", "cancelled": false}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000014",
+      "sequence": 8,
+      "type": "voice.turn.state",
+      "sentAt": "2026-07-24T12:00:09Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"turnId": "turn-voice-0001", "state": "speaking", "targetNodeId": "20000000-0000-4000-8000-000000000001", "transcript": "你好", "reply": "你好，有什么可以帮你？", "continueDialog": true}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000015",
+      "sequence": 9,
+      "type": "audio.play",
+      "sentAt": "2026-07-24T12:00:10Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"turnId": "turn-voice-0001", "mediaType": "audio/wav", "byteLength": 4096}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000016",
+      "sequence": 10,
+      "type": "audio.stream.start",
+      "sentAt": "2026-07-24T12:00:10Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"turnId": "turn-voice-0001", "mediaType": "audio/pcm", "encoding": "pcm_s16le", "sampleRate": 24000, "channels": 1}
+    },
+    {
+      "protocolVersion": 1,
+      "messageId": "10000000-0000-4000-8000-000000000017",
+      "sequence": 11,
+      "type": "audio.stream.end",
+      "sentAt": "2026-07-24T12:00:11Z",
+      "nodeId": "20000000-0000-4000-8000-000000000001",
+      "roomId": "30000000-0000-4000-8000-000000000001",
+      "sessionId": null,
+      "payload": {"turnId": "turn-voice-0001", "byteLength": 4800}
     }
   ],
   "invalid": [

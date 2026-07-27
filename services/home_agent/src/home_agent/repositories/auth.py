@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from home_agent.domain.models import AuthSession, User
+from home_agent.domain.models import AuthSession, ParentEnrollmentCode, User
 
 
 class AuthRepository:
@@ -29,12 +29,50 @@ class AuthRepository:
         return result
 
     async def create_session(
-        self, user_id: str, token_hash: str, expires_at: datetime
+        self,
+        user_id: str,
+        token_hash: str,
+        expires_at: datetime,
+        *,
+        client_name: str | None = None,
+        platform: str | None = None,
     ) -> AuthSession:
-        auth_session = AuthSession(user_id=user_id, token_hash=token_hash, expires_at=expires_at)
+        auth_session = AuthSession(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+            client_name=client_name,
+            platform=platform,
+        )
         self.session.add(auth_session)
         await self.session.flush()
         return auth_session
+
+    async def create_parent_enrollment(
+        self,
+        *,
+        code_hash: str,
+        household_id: str,
+        user_id: str,
+        expires_at: datetime,
+        created_by: str,
+    ) -> ParentEnrollmentCode:
+        enrollment = ParentEnrollmentCode(
+            code_hash=code_hash,
+            household_id=household_id,
+            user_id=user_id,
+            expires_at=expires_at,
+            created_by=created_by,
+        )
+        self.session.add(enrollment)
+        await self.session.flush()
+        return enrollment
+
+    async def parent_enrollment_by_hash(self, code_hash: str) -> ParentEnrollmentCode | None:
+        result = await self.session.scalar(
+            select(ParentEnrollmentCode).where(ParentEnrollmentCode.code_hash == code_hash)
+        )
+        return result
 
     async def session_with_user(self, token_hash: str) -> tuple[AuthSession, User] | None:
         row = (

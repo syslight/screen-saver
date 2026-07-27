@@ -62,6 +62,46 @@ class NodeEventPayload(StrictPayload):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class VoiceTurnStartPayload(StrictPayload):
+    turn_id: str = Field(alias="turnId", min_length=8, max_length=80)
+    encoding: Literal["pcm_s16le"] = "pcm_s16le"
+    sample_rate: Literal[16000] = Field(default=16000, alias="sampleRate")
+    channels: Literal[1] = 1
+
+
+class VoiceTurnStopPayload(StrictPayload):
+    turn_id: str = Field(alias="turnId", min_length=8, max_length=80)
+    cancelled: bool = False
+
+
+class VoiceTurnStatePayload(StrictPayload):
+    turn_id: str = Field(alias="turnId", min_length=8, max_length=80)
+    state: Literal["listening", "processing", "speaking", "idle", "error"]
+    target_node_id: str = Field(alias="targetNodeId", min_length=1)
+    transcript: str = ""
+    reply: str = ""
+    continue_dialog: bool = Field(default=True, alias="continueDialog")
+
+
+class AudioPlayPayload(StrictPayload):
+    turn_id: str = Field(alias="turnId", min_length=8, max_length=80)
+    media_type: Literal["audio/wav"] = Field(default="audio/wav", alias="mediaType")
+    byte_length: int = Field(alias="byteLength", ge=0)
+
+
+class AudioStreamStartPayload(StrictPayload):
+    turn_id: str = Field(alias="turnId", min_length=8, max_length=80)
+    media_type: Literal["audio/pcm"] = Field(default="audio/pcm", alias="mediaType")
+    encoding: Literal["pcm_s16le"] = "pcm_s16le"
+    sample_rate: int = Field(alias="sampleRate", ge=8000, le=48000)
+    channels: Literal[1] = 1
+
+
+class AudioStreamEndPayload(StrictPayload):
+    turn_id: str = Field(alias="turnId", min_length=8, max_length=80)
+    byte_length: int = Field(alias="byteLength", ge=0)
+
+
 class ErrorPayload(StrictPayload):
     code: str
     message: str
@@ -76,5 +116,11 @@ PAYLOAD_TYPES: dict[str, type[StrictPayload]] = {
     "command.request": CommandRequestPayload,
     "command.result": CommandResultPayload,
     "node.event": NodeEventPayload,
+    "voice.turn.start": VoiceTurnStartPayload,
+    "voice.turn.stop": VoiceTurnStopPayload,
+    "voice.turn.state": VoiceTurnStatePayload,
+    "audio.play": AudioPlayPayload,
+    "audio.stream.start": AudioStreamStartPayload,
+    "audio.stream.end": AudioStreamEndPayload,
     "error": ErrorPayload,
 }

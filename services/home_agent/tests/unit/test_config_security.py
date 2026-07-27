@@ -18,6 +18,7 @@ def test_settings_defaults_and_environment(monkeypatch: object, tmp_path: Path) 
     assert settings.database_url.endswith("home_agent.db")
     settings.ensure_directories()
     assert tmp_path.is_dir()
+    assert tmp_path.stat().st_mode & 0o777 == 0o700
 
 
 def test_database_override_is_secret(tmp_path: Path) -> None:
@@ -35,6 +36,22 @@ def test_homework_model_defaults_and_api_key_are_private() -> None:
     assert settings.homework_model_api_key is not None
     assert settings.homework_model_api_key.get_secret_value() == "private-model-key"
     assert "private-model-key" not in repr(settings)
+
+
+def test_voice_provider_defaults_and_keys_are_private() -> None:
+    settings = Settings(
+        voice_openai_api_key=SecretStr("openai-private"),
+        voice_volcano_api_key=SecretStr("volcano-private"),
+    )
+    assert settings.voice_asr_provider == "volcano"
+    assert settings.voice_tts_provider == "volcano"
+    assert settings.voice_volcano_asr_auth_mode == "app_key"
+    assert settings.voice_volcano_asr_ws_url.endswith("/api/v3/sauc/bigmodel_async")
+    assert settings.voice_volcano_asr_resource_id == "volc.bigasr.sauc.duration"
+    assert settings.voice_openai_asr_model == "gpt-4o-mini-transcribe"
+    assert settings.voice_openai_tts_model == "gpt-4o-mini-tts"
+    assert "openai-private" not in repr(settings)
+    assert "volcano-private" not in repr(settings)
 
 
 def test_password_and_credential_hashes_do_not_retain_plaintext() -> None:

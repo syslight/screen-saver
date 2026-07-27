@@ -61,10 +61,7 @@ def submit_jpeg(client: TestClient, headers: dict[str, str], task_id: str) -> di
 
 
 def test_parent_page_member_and_task_management(client: TestClient) -> None:
-    page = client.get("/parent/")
-    assert page.status_code == 200
-    assert "家庭作业中心" in page.text
-    assert "correct-password" not in page.text
+    assert client.get("/parent/").status_code == 404
     assert client.get("/api/v1/homework/members").status_code == 401
 
     _created, headers, child = setup_family(client)

@@ -158,7 +158,7 @@
 
   <div class="card">
     <h2>家庭 Agent</h2>
-    <button onclick="openParentCenter()">打开家长作业中心</button>
+    <button onclick="openHomeAdmin()">打开 HomeAdmin</button>
     <div class="cfg-result">默认连接同一主机的 8790 端口</div>
   </div>
 
@@ -177,9 +177,9 @@ function log(msg) {
   logEl.prepend(d);
 }
 
-function openParentCenter() {
+function openHomeAdmin() {
   const scheme = location.protocol === 'https:' ? 'https:' : 'http:';
-  window.open(scheme + '//' + location.hostname + ':8790/parent/', '_blank', 'noopener');
+  window.open(scheme + '//' + location.hostname + ':8800/', '_blank', 'noopener');
 }
 
 function connect() {

@@ -1,0 +1,18 @@
+[Unit]
+Description=Family Home Agent Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/peidong/source/screen-saver/services/home_agent
+ExecStart=/home/peidong/.local/bin/uv run home-agent
+Environment=HOME_AGENT_HOST=0.0.0.0
+EnvironmentFile=-%h/.config/family-home-agent/voice.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:%h/.local/share/family-home-agent/server.log
+StandardError=append:%h/.local/share/family-home-agent/server.log
+
+[Install]
+WantedBy=default.target
